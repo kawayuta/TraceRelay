@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+from .models import CoverageReport, ExtractionResult, SchemaVersion, TaskInterpretation
+
+
+class CoverageEvaluator:
+    def evaluate(
+        self,
+        schema: SchemaVersion,
+        interpretation: TaskInterpretation,
+        extraction: ExtractionResult,
+    ) -> CoverageReport:
+        payload = extraction.payload
+        supported_fields = set(schema.required_fields + schema.optional_fields)
+        supported_relations = set(schema.relations)
+        supported_keys = supported_fields | supported_relations
+        requested_fields = set(interpretation.requested_fields)
+        requested_relations = set(interpretation.requested_relations)
+
+        missing_fields = tuple(sorted(requested_fields - supported_keys))
+        missing_relations = tuple(sorted(requested_relations - supported_keys))
+
+        missing_values: list[str] = []
+        for field_name in sorted(set(schema.required_fields) | (requested_fields & supported_keys)):
+            if not _has_value(payload.get(field_name)):
+                missing_values.append(field_name)
+        for relation_name in sorted(requested_relations & supported_keys):
+            if not _has_value(payload.get(relation_name)):
+                missing_values.append(relation_name)
+
+        dominant_issue = "none"
+        if missing_fields or missing_relations:
+            dominant_issue = "schema"
+        elif missing_values:
+            dominant_issue = "values"
+        return CoverageReport(
+            missing_values=tuple(missing_values),
+            missing_fields=missing_fields,
+            missing_relations=missing_relations,
+            dominant_issue=dominant_issue,
+        )
+
+
+def _has_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict, set)):
+        return bool(value)
+    return True

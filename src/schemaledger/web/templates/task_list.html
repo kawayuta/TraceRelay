@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+
+{% block title %}SchemaLedger Tasks{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <span class="eyebrow">Task Browser</span>
+    <h1>Trace how each task reasoned, branched, and evolved.</h1>
+    <p>
+      Open a task to inspect the full runtime path: prompt interpretation, schema lineage,
+      extraction attempts, coverage checks, schema evolution, and the final run outcome.
+    </p>
+    <div class="meta-row">
+      <span class="stat"><strong>{{ tasks|length }}</strong> tasks</span>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top: 1rem;">
+    <div class="section-title">
+      <div>
+        <h2>Tasks</h2>
+        <p>Each card links to a flowchart and a decision tree for one task run.</p>
+      </div>
+    </div>
+
+    {% if tasks %}
+      <div class="cards">
+        {% for task in tasks %}
+          <a class="task-card" href="/tasks/{{ task.task_id }}">
+            <span class="status-pill status-{{ task.status or 'warning' }}">{{ task.status or "unknown" }}</span>
+            <h3 style="margin-top: 0.85rem;">{{ task.resolved_subject or task.task_id }}</h3>
+            <p>{{ task.prompt }}</p>
+            <div class="chip-row">
+              <span class="chip"><strong>family</strong> {{ task.family or "n/a" }}</span>
+              <span class="chip"><strong>reason</strong> {{ task.reason or "n/a" }}</span>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty">No tasks are available yet.</div>
+    {% endif %}
+  </section>
+{% endblock %}

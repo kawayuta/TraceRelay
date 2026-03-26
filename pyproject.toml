@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "schemaledger-implementation-plan"
+version = "0.1.0"
+description = "Task-first runtime slice for SchemaLedger 2.0.0rc3"
+requires-python = ">=3.11"
+dependencies = [
+  "flask>=3.1,<4",
+  "mcp[cli]>=1.26.0",
+  "psycopg[binary]>=3.2,<4",
+]
+
+[project.scripts]
+schemaledger-mcp = "schemaledger.mcp.server:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4,<9",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests"]

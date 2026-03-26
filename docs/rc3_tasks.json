@@ -1,0 +1,53 @@
+{
+  "release_target": "2.0.0rc3",
+  "focus": [
+    "llm_native_task_interpretation",
+    "family_bootstrap_generalization",
+    "values_first_retry",
+    "schema_evolution_required_live_case",
+    "task_projection_db_web",
+    "mcp_surface"
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "title": "LLM-native task interpretation",
+      "priority": "P0"
+    },
+    {
+      "id": "WP2",
+      "title": "Family candidate scoring and bootstrap",
+      "priority": "P0"
+    },
+    {
+      "id": "WP3",
+      "title": "Coverage semantics",
+      "priority": "P0"
+    },
+    {
+      "id": "WP4",
+      "title": "Re-extract-first loop",
+      "priority": "P0"
+    },
+    {
+      "id": "WP5",
+      "title": "Gap -> requirement -> candidate sequence",
+      "priority": "P0"
+    },
+    {
+      "id": "WP6",
+      "title": "PostgreSQL projection of task runtime",
+      "priority": "P0"
+    },
+    {
+      "id": "WP7",
+      "title": "Flask task-first browse/API",
+      "priority": "P1"
+    },
+    {
+      "id": "WP8",
+      "title": "MCP surface",
+      "priority": "P2"
+    }
+  ]
+}

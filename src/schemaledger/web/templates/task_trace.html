@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+
+{% macro render_tree(node) %}
+  <li>
+    <article class="tree-node">
+      <h4>{{ node.title }}</h4>
+      {% if node.lines %}
+        <ul>
+          {% for line in node.lines %}
+            <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </article>
+    {% if node.children %}
+      <ul class="tree-children">
+        {% for child in node.children %}
+          {{ render_tree(child) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+{% block title %}{{ trace.summary.resolved_subject or trace.task_id }}{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <span class="eyebrow">Task Trace</span>
+    <h1>{{ trace.summary.resolved_subject or trace.task_id }}</h1>
+    <p>{{ trace.summary.prompt }}</p>
+    <div class="meta-row">
+      <span class="stat"><strong>family</strong> {{ trace.summary.family or "n/a" }}</span>
+      <span class="stat"><strong>status</strong> {{ trace.summary.status or "unknown" }}</span>
+      <span class="stat"><strong>reason</strong> {{ trace.summary.reason or "n/a" }}</span>
+      <span class="stat"><strong>attempts</strong> {{ trace.summary.attempts or 0 }}</span>
+      <span class="stat"><strong>schema rounds</strong> {{ trace.summary.schema_rounds or 0 }}</span>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="panel col-span-4">
+      <div class="section-title">
+        <div>
+          <h2>Schema Lineage</h2>
+          <p>How the active schema changed during the run.</p>
+        </div>
+      </div>
+      <div class="schema-lineage">
+        {% for schema in trace.schema_lineage %}
+          <article class="schema-card">
+            <h3>Schema v{{ schema.version }}</h3>
+            <p>{{ schema.family }} / {{ schema.schema_id }}</p>
+            <div class="chip-row">
+              <span class="chip"><strong>required</strong> {{ schema.required_fields|length }}</span>
+              <span class="chip"><strong>optional</strong> {{ schema.optional_fields|length }}</span>
+              <span class="chip"><strong>relations</strong> {{ schema.relations|length }}</span>
+            </div>
+            {% if schema.rationale %}
+              <p style="margin-top: 0.75rem;">{{ schema.rationale }}</p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel col-span-8">
+      <div class="section-title">
+        <div>
+          <h2>Evolution Flowchart</h2>
+          <p>Chronological runtime artifacts, including branch points and follow-up actions.</p>
+        </div>
+      </div>
+      <div class="flowchart">
+        {% for node in trace.flowchart.nodes %}
+          <article class="node-card" data-lane="{{ node.lane }}">
+            <span class="node-kicker">{{ node.artifact_type }}</span>
+            <h3>{{ node.title }}</h3>
+            {% if node.subtitle %}
+              <p>{{ node.subtitle }}</p>
+            {% endif %}
+            {% if node.details %}
+              <ul>
+                {% for detail in node.details %}
+                  <li>{{ detail }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </article>
+          {% if not loop.last %}
+            {% set edge = trace.flowchart.edges[loop.index0] %}
+            <div class="flow-arrow">
+              <span>{{ edge.label or "next" }}</span>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel col-span-12">
+      <div class="section-title">
+        <div>
+          <h2>Decision Tree</h2>
+          <p>Why the runtime kept extracting, retried, evolved the schema, or stopped.</p>
+        </div>
+      </div>
+      <ul class="tree">
+        {{ render_tree(trace.decision_tree) }}
+      </ul>
+    </section>
+  </div>
+{% endblock %}
