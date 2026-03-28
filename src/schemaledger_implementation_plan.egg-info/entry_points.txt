@@ -1,2 +1,0 @@
-[console_scripts]
-schemaledger-mcp = schemaledger.mcp.server:main

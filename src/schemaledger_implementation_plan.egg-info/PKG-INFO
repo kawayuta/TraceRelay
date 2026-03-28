@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: schemaledger-implementation-plan
-Version: 0.1.0
-Summary: Task-first runtime slice for SchemaLedger 2.0.0rc3
-Requires-Python: >=3.11
-Requires-Dist: flask<4,>=3.1
-Requires-Dist: mcp[cli]>=1.26.0
-Requires-Dist: psycopg[binary]<4,>=3.2
