@@ -10,6 +10,8 @@ class TaskSpec:
     locale: str = "auto"
     requested_scope: tuple[str, ...] = ()
     caller: str = "user"
+    user_id: str | None = None
+    memory_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class TaskInterpretation:
     scope_hints: tuple[str, ...]
     task_shape: str
     locale: str
+    memory_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,56 @@ class ArtifactRecord:
 
 
 @dataclass(frozen=True)
+class MemoryDocument:
+    memory_id: str
+    source_task_id: str
+    kind: str
+    user_id: str
+    subject: str
+    subject_key: str
+    family: str
+    text: str
+    algorithm: str
+    vector: tuple[float, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MemoryHit:
+    memory_id: str
+    source_task_id: str
+    kind: str
+    user_id: str
+    subject: str
+    subject_key: str
+    family: str
+    text: str
+    score: float
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class UserProfile:
+    profile_id: str
+    user_id: str
+    preferred_locale: str
+    family_preferences: tuple[str, ...]
+    recent_subjects: tuple[str, ...]
+    requested_fields: tuple[str, ...]
+    requested_relations: tuple[str, ...]
+    summary: str
+
+
+@dataclass(frozen=True)
+class TaskMemoryContext:
+    user_id: str
+    profile: UserProfile | None = None
+    prompt_hits: tuple[MemoryHit, ...] = ()
+    subject_hits: tuple[MemoryHit, ...] = ()
+    context_text: str = ""
+
+
+@dataclass(frozen=True)
 class TaskRun:
     task_id: str
     spec: TaskSpec
@@ -121,3 +174,4 @@ class TaskRun:
     review: ReviewDecision | None = None
     events: tuple[TaskEvent, ...] = ()
     artifacts: tuple[ArtifactRecord, ...] = ()
+    memory_context: TaskMemoryContext | None = None

@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+
+{% macro render_card(card) %}
+  <a class="task-card memory-card" href="{{ card.href }}">
+    {% if card.score is not none %}
+      <span class="status-pill status-warning">score {{ "%.3f"|format(card.score) }}</span>
+    {% endif %}
+    <h3>{{ card.title }}</h3>
+    {% if card.subtitle %}
+      <p>{{ card.subtitle }}</p>
+    {% endif %}
+    {% if card.chips %}
+      <div class="chip-row">
+        {% for chip in card.chips %}
+          <span class="chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% if card.snippets %}
+      <ul class="memory-snippets">
+        {% for snippet in card.snippets %}
+          <li>{{ snippet }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </a>
+{% endmacro %}
+
+{% block title %}{{ memory.title }}{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <span class="eyebrow">Memory Browser</span>
+    <h1>{{ memory.title }}</h1>
+    <p>{{ memory.subtitle }}</p>
+    <form class="memory-search" action="/memory/search" method="get">
+      <input
+        type="search"
+        name="q"
+        placeholder="Search prior tasks, subjects, or learned facts"
+        value="{{ memory.search_query or '' }}"
+      >
+      <button type="submit">Search</button>
+    </form>
+    <div class="meta-row">
+      {% for stat in memory.stats %}
+        <span class="stat"><strong>{{ stat.value }}</strong> {{ stat.label }}</span>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% for block in memory.blocks %}
+    <section class="panel" style="margin-top: 1rem;">
+      <div class="section-title">
+        <div>
+          <h2>{{ block.title }}</h2>
+          {% if block.description %}
+            <p>{{ block.description }}</p>
+          {% endif %}
+        </div>
+      </div>
+      {% if block.lines %}
+        <ul class="memory-lines">
+          {% for line in block.lines %}
+            <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if block.chips %}
+        <div class="chip-row">
+          {% for chip in block.chips %}
+            <span class="chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if block.cards %}
+        <div class="cards">
+          {% for card in block.cards %}
+            {{ render_card(card) }}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  {% endfor %}
+{% endblock %}

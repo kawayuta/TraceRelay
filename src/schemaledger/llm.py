@@ -128,7 +128,8 @@ class LMStudioStructuredLLM:
                 "Use requested_fields for attributes directly attached to the subject.\n"
                 "Use requested_relations for links to other entities or regions.\n"
                 "For organization-like prompts, prefer relations for subsidiaries, competitors, "
-                "executives-as-people, acquisitions-as-target-entities, and operating regions."
+                "executives-as-people, acquisitions-as-target-entities, and operating regions.\n"
+                "You may use memory_context as prior context from earlier tasks, but do not let stale memory override the current prompt."
             ),
             schema_name="task_interpretation",
             schema=_task_interpretation_schema(),
@@ -138,6 +139,8 @@ class LMStudioStructuredLLM:
                     "locale": spec.locale,
                     "requested_scope": list(spec.requested_scope),
                     "caller": spec.caller,
+                    "user_id": spec.user_id,
+                    "memory_context": spec.memory_context,
                 },
                 ensure_ascii=False,
             ),
@@ -151,7 +154,8 @@ class LMStudioStructuredLLM:
                 "family must remain the same abstract schema class from the interpretation step.\n"
                 "All fields and relations must be atomic snake_case keys.\n"
                 "Create the narrowest viable schema for this task.\n"
-                "Do not add speculative fields or relations that are not needed for the requested task."
+                "Do not add speculative fields or relations that are not needed for the requested task.\n"
+                "Use memory_context for prior learned details about the same subject when it helps narrow the schema."
             ),
             schema_name="initial_schema",
             schema=_schema_definition_schema(),
@@ -162,6 +166,7 @@ class LMStudioStructuredLLM:
                     "requested_fields": list(interpretation.requested_fields),
                     "requested_relations": list(interpretation.requested_relations),
                     "intent": interpretation.intent,
+                    "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
             ),
@@ -183,7 +188,8 @@ class LMStudioStructuredLLM:
                 "All fields and relations must be atomic snake_case keys.\n"
                 "Only add keys that directly resolve the current missing_fields and missing_relations.\n"
                 "Do not add unrelated enrichment fields, metadata fields, historical fields, or nice-to-have keys.\n"
-                "If no schema change is needed, return the current schema unchanged."
+                "If no schema change is needed, return the current schema unchanged.\n"
+                "Use memory_context to reuse prior learned subject details before expanding the schema."
             ),
             schema_name="evolved_schema",
             schema=_schema_definition_schema(),
@@ -205,6 +211,7 @@ class LMStudioStructuredLLM:
                         "dominant_issue": coverage.dominant_issue,
                     },
                     "extraction_payload": extraction.payload,
+                    "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
             ),
@@ -224,7 +231,8 @@ class LMStudioStructuredLLM:
                 "Populate the payload using the provided schema keys exactly.\n"
                 "payload must contain only domain keys from the schema.\n"
                 "Do not echo request metadata such as family, attempt, resolved_subject, schema, scope_hints, or intent.\n"
-                "Fill every required field and every relation key with the best available value."
+                "Fill every required field and every relation key with the best available value.\n"
+                "Use memory_context for previously learned facts about the same subject before leaving values empty."
             ),
             schema_name="task_extraction",
             schema=_task_extraction_schema(schema),
@@ -242,6 +250,7 @@ class LMStudioStructuredLLM:
                     },
                     "scope_hints": list(interpretation.scope_hints),
                     "intent": interpretation.intent,
+                    "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
             ),
@@ -328,7 +337,7 @@ def _schema_definition_schema() -> dict[str, Any]:
 
 
 def _task_extraction_schema(schema: SchemaVersion) -> dict[str, Any]:
-    keys = list(schema.required_fields + schema.optional_fields + schema.relations)
+    keys = list(dict.fromkeys(schema.required_fields + schema.optional_fields + schema.relations))
     value_schema = {
         "anyOf": [
             {"type": "string"},

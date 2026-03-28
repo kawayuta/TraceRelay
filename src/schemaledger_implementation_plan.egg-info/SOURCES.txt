@@ -5,10 +5,12 @@ src/schemaledger/candidate_generation.py
 src/schemaledger/config.py
 src/schemaledger/coverage.py
 src/schemaledger/coverage_dimensions.py
+src/schemaledger/embeddings.py
 src/schemaledger/extraction.py
 src/schemaledger/family_bootstrap.py
 src/schemaledger/family_resolution.py
 src/schemaledger/llm.py
+src/schemaledger/memory.py
 src/schemaledger/models.py
 src/schemaledger/prompt_interpretation.py
 src/schemaledger/schema_patch_planner.py
@@ -32,6 +34,8 @@ src/schemaledger/mcp/tools.py
 src/schemaledger/web/__init__.py
 src/schemaledger/web/app.py
 src/schemaledger/web/repository.py
+src/schemaledger/web/server.py
+src/schemaledger/web/trace.py
 src/schemaledger_implementation_plan.egg-info/PKG-INFO
 src/schemaledger_implementation_plan.egg-info/SOURCES.txt
 src/schemaledger_implementation_plan.egg-info/dependency_links.txt
@@ -39,6 +43,8 @@ src/schemaledger_implementation_plan.egg-info/entry_points.txt
 src/schemaledger_implementation_plan.egg-info/requires.txt
 src/schemaledger_implementation_plan.egg-info/top_level.txt
 tests/test_external_surfaces.py
+tests/test_memory.py
+tests/test_memory_storage.py
 tests/test_prompt_interpretation.py
 tests/test_rc3_plan_smoke.py
 tests/test_task_runtime.py

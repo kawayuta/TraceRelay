@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Python cache and virtualenvs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Coverage and test outputs
+.coverage
+.coverage.*
+htmlcov/
+
+# Build metadata
+*.egg-info/
+build/
+dist/
+
+# Local runtime artifacts
+workspace/
+tmp_repro_workspace/
+tmp_retest_workspace/
+tmp_retest_workspace_2/
+output/
+
+# Editor / local env
+.env
+.env.*

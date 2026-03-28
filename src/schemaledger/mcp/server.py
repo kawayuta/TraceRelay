@@ -37,7 +37,7 @@ def create_mcp_server(
         name="schemaledger",
         instructions=(
             "Task-first SchemaLedger MCP server. "
-            "Use tools to evolve tasks and resources to inspect task lineage."
+            "Use tools to evolve tasks, inspect task lineage, and recall memory snapshots."
         ),
         host=host,
         port=port,

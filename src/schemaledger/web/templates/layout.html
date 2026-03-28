@@ -72,6 +72,22 @@
         color: var(--ink);
       }
 
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+      }
+
+      .nav a {
+        text-decoration: none;
+        color: var(--ink);
+        padding: 0.45rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid rgba(43, 54, 47, 0.12);
+        background: rgba(255, 255, 255, 0.66);
+        font-size: 0.9rem;
+      }
+
       .eyebrow {
         display: inline-flex;
         align-items: center;
@@ -200,6 +216,74 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
         gap: 0.9rem;
+      }
+
+      .memory-search {
+        display: flex;
+        gap: 0.7rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .memory-search input,
+      .memory-search select {
+        flex: 1 1 18rem;
+        min-width: 0;
+        padding: 0.9rem 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(43, 54, 47, 0.16);
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .memory-search button {
+        padding: 0.9rem 1.1rem;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--decision), var(--schema));
+        color: white;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .memory-lines {
+        margin: 0.75rem 0 0;
+        padding-left: 1rem;
+        color: var(--muted);
+      }
+
+      .memory-lines li + li {
+        margin-top: 0.28rem;
+      }
+
+      .memory-card {
+        position: relative;
+      }
+
+      .memory-card .status-pill {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+      }
+
+      .memory-card h3 {
+        margin-top: 1.85rem;
+      }
+
+      .memory-card .chip-row {
+        margin-top: 0.85rem;
+      }
+
+      .memory-card .memory-snippets {
+        margin: 0.7rem 0 0;
+        padding-left: 1rem;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .memory-card .memory-snippets li + li {
+        margin-top: 0.25rem;
       }
 
       .task-card,
@@ -402,6 +486,10 @@
         <a class="brand" href="/tasks">
           <span class="eyebrow">SchemaLedger Trace</span>
         </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="/tasks">Tasks</a>
+          <a href="/memory">Memory</a>
+        </nav>
       </div>
       {% block content %}{% endblock %}
     </div>

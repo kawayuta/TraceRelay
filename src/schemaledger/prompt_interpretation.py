@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .llm import LLMError, StructuredLLM
 from .models import TaskInterpretation, TaskSpec
 
@@ -10,7 +12,7 @@ class PromptInterpreter:
 
     def interpret(self, spec: TaskSpec) -> TaskInterpretation:
         payload = self.llm.interpret_task(spec)
-        return _interpret_from_llm(payload)
+        return replace(_interpret_from_llm(payload), memory_context=dict(spec.memory_context))
 
 
 def _interpret_from_llm(payload: dict[str, object]) -> TaskInterpretation:

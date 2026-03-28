@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict, replace
+
 from .candidate_generation import build_candidate
 from .coverage import CoverageEvaluator
 from .evolution.gaps import build_gap
@@ -7,6 +9,7 @@ from .evolution.ids import next_id
 from .evolution.requirements import build_requirement
 from .extraction import Extractor
 from .llm import StructuredLLM, llm_from_env
+from .memory import ArtifactMemoryStore, resolve_user_id
 from .models import (
     ArtifactRecord,
     CoverageReport,
@@ -31,6 +34,7 @@ class TaskRuntime:
         coverage: CoverageEvaluator | None = None,
         artifact_store: InMemoryArtifactStore | None = None,
         schema_store: ArtifactSchemaStore | None = None,
+        memory_store: ArtifactMemoryStore | None = None,
         max_value_retries: int = 2,
         max_schema_rounds: int = 3,
     ) -> None:
@@ -43,14 +47,29 @@ class TaskRuntime:
         self.coverage = coverage or CoverageEvaluator()
         self.artifact_store = artifact_store or InMemoryArtifactStore()
         self.schema_store = schema_store or ArtifactSchemaStore(self.artifact_store)
+        self.memory_store = memory_store or ArtifactMemoryStore(self.artifact_store)
         self.max_value_retries = max_value_retries
         self.max_schema_rounds = max_schema_rounds
 
     def run_task(self, spec: TaskSpec) -> TaskRun:
         task_id = next_id("task")
-        self._record(task_id, "task_prompt", {"prompt": spec.prompt, "locale": spec.locale})
+        self._record(
+            task_id,
+            "task_prompt",
+            {
+                "prompt": spec.prompt,
+                "locale": spec.locale,
+                "caller": spec.caller,
+                "user_id": resolve_user_id(spec),
+            },
+        )
 
-        interpretation = self.interpreter.interpret(spec)
+        prompt_memory = self.memory_store.build_context(spec, exclude_task_id=task_id)
+        working_spec = replace(spec, memory_context=_memory_context_payload(prompt_memory))
+
+        interpretation = self.interpreter.interpret(working_spec)
+        task_memory = self.memory_store.build_context(working_spec, interpretation, exclude_task_id=task_id)
+        interpretation = replace(interpretation, memory_context=_memory_context_payload(task_memory))
         self._record(
             task_id,
             "task_interpretation",
@@ -62,8 +81,10 @@ class TaskRuntime:
                 "requested_fields": list(interpretation.requested_fields),
                 "requested_relations": list(interpretation.requested_relations),
                 "scope_hints": list(interpretation.scope_hints),
+                "memory_context": interpretation.memory_context,
             },
         )
+        self.memory_store.append_task_context(task_id, task_memory)
 
         current_schema = self.schema_store.latest_for_family(interpretation.family)
         schema_history: list[SchemaVersion] = []
@@ -232,10 +253,11 @@ class TaskRuntime:
                 "schema_rounds": schema_rounds,
             },
         )
+        self.memory_store.learn_from_task(task_id, working_spec, interpretation, extraction_history[-1])
         task_artifacts = self.artifact_store.list_for_task(task_id)
         return TaskRun(
             task_id=task_id,
-            spec=spec,
+            spec=working_spec,
             interpretation=interpretation,
             schema=current_schema,
             extraction=extraction_history[-1],
@@ -251,6 +273,7 @@ class TaskRuntime:
             review=review,
             events=tuple(events),
             artifacts=task_artifacts,
+            memory_context=task_memory,
         )
 
     def _record(self, task_id: str, artifact_type: str, payload: dict[str, object]) -> None:
@@ -262,6 +285,12 @@ class TaskRuntime:
                 payload=dict(payload),
             )
         )
+
+
+def _memory_context_payload(context: object) -> dict[str, object]:
+    if hasattr(context, "__dataclass_fields__"):
+        return asdict(context)
+    return {}
 
 
 def _restrict_schema_evolution_payload(

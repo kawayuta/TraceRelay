@@ -16,6 +16,7 @@ from ..evolution.ids import next_id
 from ..models import ArtifactRecord
 from ..task_runtime import TaskRuntime
 from ..task_flow import JsonlArtifactStore
+from ..web.app import build_memory_search, build_subject_memory, build_task_memory_context, build_workspace_profile_memory
 from ..web.repository import PostgresTaskRepository, TaskBrowseRepository
 
 
@@ -27,6 +28,10 @@ def list_tools() -> list[dict[str, object]]:
         {"name": "schema_apply", "description": "Return the active schema after auto-apply evolution."},
         {"name": "artifact_read", "description": "Read artifacts for a task."},
         {"name": "artifact_search", "description": "Search tasks by prompt, subject, or family."},
+        {"name": "memory_search", "description": "Vector-style search over prior tasks and learned facts."},
+        {"name": "memory_profile", "description": "Read the workspace profile memory snapshot."},
+        {"name": "subject_memory", "description": "Read subject memory and recalled learnings."},
+        {"name": "task_memory_context", "description": "Read task memory context for follow-up prompts."},
     ]
 
 
@@ -73,6 +78,29 @@ class MCPToolbox:
             )
         if name == "artifact_search":
             return self.repository.search(str(arguments["query"]))
+        if name == "memory_search":
+            return build_memory_search(
+                self.repository,
+                str(arguments["query"]),
+                limit=int(arguments.get("limit", 8)),
+            )
+        if name == "memory_profile":
+            return build_workspace_profile_memory(
+                self.repository,
+                profile_id=str(arguments.get("profile_id", "workspace")),
+            )
+        if name == "subject_memory":
+            return build_subject_memory(
+                self.repository,
+                str(arguments["subject"]),
+                limit=int(arguments.get("limit", 6)),
+            )
+        if name == "task_memory_context":
+            return build_task_memory_context(
+                self.repository,
+                str(arguments["task_id"]),
+                limit=int(arguments.get("limit", 6)),
+            )
         raise KeyError(name)
 
     def runtime_task_spec(self, prompt: str):
@@ -249,3 +277,31 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
     )
     def artifact_search(query: str) -> list[dict[str, object]]:
         return list(toolbox.call("artifact_search", {"query": query}))
+
+    @mcp.tool(
+        name="memory_search",
+        description="Vector-style search over prior tasks and learned facts.",
+    )
+    def memory_search(query: str, limit: int = 8) -> dict[str, object]:
+        return dict(toolbox.call("memory_search", {"query": query, "limit": limit}))
+
+    @mcp.tool(
+        name="memory_profile",
+        description="Read the workspace profile memory snapshot.",
+    )
+    def memory_profile(profile_id: str = "workspace") -> dict[str, object]:
+        return dict(toolbox.call("memory_profile", {"profile_id": profile_id}))
+
+    @mcp.tool(
+        name="subject_memory",
+        description="Read subject memory and recalled learnings.",
+    )
+    def subject_memory(subject: str, limit: int = 6) -> dict[str, object]:
+        return dict(toolbox.call("subject_memory", {"subject": subject, "limit": limit}))
+
+    @mcp.tool(
+        name="task_memory_context",
+        description="Read task memory context for follow-up prompts.",
+    )
+    def task_memory_context(task_id: str, limit: int = 6) -> dict[str, object]:
+        return dict(toolbox.call("task_memory_context", {"task_id": task_id, "limit": limit}))

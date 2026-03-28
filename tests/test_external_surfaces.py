@@ -12,9 +12,10 @@ from mcp.server.fastmcp import FastMCP
 
 from schemaledger.config import DEFAULT_POSTGRES_DSN
 from schemaledger.indexer.loader import TaskRuntimeProjector
-from schemaledger.llm import LMStudioClient, LMStudioConfig, LMStudioStructuredLLM
+from schemaledger.llm import LMStudioClient, LMStudioConfig, LMStudioStructuredLLM, _task_extraction_schema
 from schemaledger.mcp.server import LocalMCPServer, create_mcp_server
-from schemaledger.models import ExtractionResult, TaskSpec
+from schemaledger.models import ExtractionResult, SchemaVersion, TaskSpec
+from schemaledger.schema_store import ArtifactSchemaStore
 from schemaledger.task_flow import JsonlArtifactStore
 from schemaledger.task_runtime import TaskRuntime
 from schemaledger.web.app import create_app
@@ -257,6 +258,88 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert structured_trace["summary"]["reason"] == "complete"
 
 
+def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+    google = runtime.run_task(
+        TaskSpec(
+            prompt="Googleの事業内容に加えて、主要経営陣、主要子会社、主要買収案件、主要競合、主要リスク、地域別展開も構造化して整理して"
+        )
+    )
+    policy = runtime.run_task(
+        TaskSpec(
+            prompt="日本の少子化対策の政策パッケージを、政策目的、対象人口、実施主体、施策一覧、財源、評価指標、論点で構造化して"
+        )
+    )
+
+    repository = TaskRepository(store)
+    app = create_app(repository)
+    client = app.test_client()
+
+    profile_payload = client.get("/api/memory/profile").get_json()
+    assert profile_payload["kind"] == "profile"
+    assert profile_payload["profile_id"] == "workspace"
+    assert profile_payload["stats"][0]["value"] == 2
+
+    search_payload = client.get("/api/memory/search?q=Google").get_json()
+    assert search_payload["strategy"] == "hash_vector_v1"
+    assert search_payload["results"][0]["task_id"] == google.task_id
+    assert len({item["task_id"] for item in search_payload["results"]}) == len(search_payload["results"])
+
+    subject_payload = client.get("/api/memory/subjects/Google").get_json()
+    assert subject_payload["kind"] == "subject"
+    assert subject_payload["subject"] == "Google"
+    assert subject_payload["related_tasks"][0]["task_id"] == google.task_id
+
+    task_memory_payload = client.get(f"/api/memory/tasks/{google.task_id}").get_json()
+    assert task_memory_payload["kind"] == "task"
+    assert task_memory_payload["task_id"] == google.task_id
+    assert "Google" in task_memory_payload["recall_context"]
+
+    memory_html = client.get("/memory")
+    assert memory_html.status_code == 200
+    assert "Memory Browser" in memory_html.get_data(as_text=True)
+    subject_html = client.get("/memory/subjects/Google")
+    assert subject_html.status_code == 200
+    assert "Subject Memory: Google" in subject_html.get_data(as_text=True)
+    task_html = client.get(f"/memory/tasks/{google.task_id}")
+    assert task_html.status_code == 200
+    assert "Task Snapshot" in task_html.get_data(as_text=True)
+
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    description = server.describe()
+    assert {tool["name"] for tool in description["tools"]} >= {
+        "memory_search",
+        "memory_profile",
+        "subject_memory",
+        "task_memory_context",
+    }
+    assert {tool.name for tool in server.list_tools()} >= {
+        "memory_search",
+        "memory_profile",
+        "subject_memory",
+        "task_memory_context",
+    }
+    assert "schemaledger://memory/profile" in {
+        str(resource.uri) for resource in server.list_resources()
+    }
+    assert "schemaledger://memory/search/{query}" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    memory_search_result = server.call_tool("memory_search", {"query": "Google"})
+    assert memory_search_result["results"][0]["task_id"] == google.task_id
+    assert len({item["task_id"] for item in memory_search_result["results"]}) == len(memory_search_result["results"])
+    memory_profile_result = server.call_tool("memory_profile", {"profile_id": "workspace"})
+    assert memory_profile_result["profile_id"] == "workspace"
+    subject_memory_result = server.call_tool("subject_memory", {"subject": "Google"})
+    assert subject_memory_result["subject"] == "Google"
+    task_memory_result = server.call_tool("task_memory_context", {"task_id": google.task_id})
+    assert task_memory_result["task_id"] == google.task_id
+    assert server.read_resource("schemaledger://memory/profile")["profile_id"] == "workspace"
+    assert server.read_resource("schemaledger://memory/subjects/Google")["subject"] == "Google"
+    assert server.read_resource(f"schemaledger://memory/tasks/{google.task_id}")["task_id"] == google.task_id
+
+
 def test_lm_studio_http_integration(tmp_path):
     with patch("schemaledger.llm.request.urlopen", side_effect=_fake_urlopen):
         client = LMStudioClient(
@@ -330,6 +413,42 @@ def test_module_entrypoint_prefers_local_source_tree_over_inherited_pythonpath(t
 
     assert result.returncode == 0, result.stderr
     assert "Run the SchemaLedger MCP server." in result.stdout
+
+
+def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    schema_store = ArtifactSchemaStore(store)
+    schema = schema_store.create_or_update_schema(
+        "task-1",
+        "organization",
+        {
+            "required_fields": ["overview", "leadership", "overview"],
+            "optional_fields": ["leadership", "major_risks", "overview"],
+            "relations": ["subsidiaries", "major_risks", "subsidiaries"],
+            "rationale": "Normalize duplicates.",
+        },
+        parent=None,
+    )
+
+    assert schema.required_fields == ("overview", "leadership")
+    assert schema.optional_fields == ("major_risks",)
+    assert schema.relations == ("subsidiaries",)
+
+    extraction_schema = _task_extraction_schema(
+        SchemaVersion(
+            schema_id="schema-1",
+            family="organization",
+            version=1,
+            parent_schema_id=None,
+            required_fields=("overview", "overview"),
+            optional_fields=("major_risks", "overview"),
+            relations=("subsidiaries", "major_risks", "subsidiaries"),
+            rationale="test",
+        )
+    )
+    payload_schema = extraction_schema["properties"]["payload"]
+    assert list(payload_schema["properties"].keys()) == ["overview", "major_risks", "subsidiaries"]
+    assert payload_schema["required"] == ["overview", "major_risks", "subsidiaries"]
 
 
 class _StubCursor:

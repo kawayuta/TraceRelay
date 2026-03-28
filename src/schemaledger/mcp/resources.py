@@ -29,6 +29,27 @@ def list_resources() -> list[dict[str, object]]:
             "name": "trace",
             "description": "Read task flowchart and decision trace",
         },
+        {"uri": "schemaledger://memory/profile", "name": "memory_profile", "description": "Read workspace profile memory"},
+        {
+            "uri": "schemaledger://memory/profile/{profile_id}",
+            "name": "memory_profile_named",
+            "description": "Read named profile memory",
+        },
+        {
+            "uri": "schemaledger://memory/subjects/{subject}",
+            "name": "subject_memory",
+            "description": "Read subject memory",
+        },
+        {
+            "uri": "schemaledger://memory/tasks/{task_id}",
+            "name": "task_memory_context",
+            "description": "Read task memory context",
+        },
+        {
+            "uri": "schemaledger://memory/search/{query}",
+            "name": "memory_search",
+            "description": "Search prior tasks and learned facts",
+        },
     ]
 
 
@@ -86,3 +107,58 @@ def register_resources(mcp: FastMCP, repository: TaskBrowseRepository) -> None:
     )
     def trace(task_id: str) -> dict[str, object]:
         return repository.get_task_trace(task_id)
+
+    @mcp.resource(
+        "schemaledger://memory/profile",
+        name="memory_profile",
+        description="Read workspace profile memory",
+        mime_type="application/json",
+    )
+    def memory_profile() -> dict[str, object]:
+        from ..web.app import build_workspace_profile_memory
+
+        return build_workspace_profile_memory(repository)
+
+    @mcp.resource(
+        "schemaledger://memory/profile/{profile_id}",
+        name="memory_profile_named",
+        description="Read named profile memory",
+        mime_type="application/json",
+    )
+    def memory_profile_named(profile_id: str) -> dict[str, object]:
+        from ..web.app import build_workspace_profile_memory
+
+        return build_workspace_profile_memory(repository, profile_id=profile_id)
+
+    @mcp.resource(
+        "schemaledger://memory/subjects/{subject}",
+        name="subject_memory",
+        description="Read subject memory",
+        mime_type="application/json",
+    )
+    def subject_memory(subject: str) -> dict[str, object]:
+        from ..web.app import build_subject_memory
+
+        return build_subject_memory(repository, subject)
+
+    @mcp.resource(
+        "schemaledger://memory/tasks/{task_id}",
+        name="task_memory_context",
+        description="Read task memory context",
+        mime_type="application/json",
+    )
+    def task_memory_context(task_id: str) -> dict[str, object]:
+        from ..web.app import build_task_memory_context
+
+        return build_task_memory_context(repository, task_id)
+
+    @mcp.resource(
+        "schemaledger://memory/search/{query}",
+        name="memory_search",
+        description="Search prior tasks and learned facts",
+        mime_type="application/json",
+    )
+    def memory_search(query: str) -> dict[str, object]:
+        from ..web.app import build_memory_search
+
+        return build_memory_search(repository, query)

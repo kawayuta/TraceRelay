@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..web.repository import build_task_memory_records, build_user_profile_records
 from ..task_flow import JsonlArtifactStore
 
 try:
@@ -17,6 +18,7 @@ except Exception:  # pragma: no cover
 class ProjectionRow:
     table: str
     values: dict[str, Any]
+    conflict_columns: tuple[str, ...] = ("artifact_id",)
 
 
 class TaskRuntimeProjector:
@@ -134,12 +136,45 @@ class TaskRuntimeProjector:
                         },
                     )
                 )
+        memory_artifacts = [
+            {
+                "artifact_id": artifact.artifact_id,
+                "artifact_type": artifact.artifact_type,
+                "payload": artifact.payload,
+            }
+            for artifact in artifacts
+        ]
+        for record in build_task_memory_records(task_id, memory_artifacts):
+            rows.append(
+                ProjectionRow(
+                    table=str(record.get("table", record["record_type"])),
+                    values=_projection_values(record),
+                    conflict_columns=tuple(str(column) for column in record.get("conflict_columns", ("artifact_id",))),
+                )
+            )
         return tuple(rows)
 
     def build_reindex_plan(self) -> tuple[ProjectionRow, ...]:
         rows: list[ProjectionRow] = []
         for task_id in self.store.list_task_ids():
             rows.extend(self.rows_for_task(task_id))
+        all_artifacts = [
+            {
+                "artifact_id": artifact.artifact_id,
+                "task_id": artifact.task_id,
+                "artifact_type": artifact.artifact_type,
+                "payload": artifact.payload,
+            }
+            for artifact in self.store.all_artifacts()
+        ]
+        for record in build_user_profile_records(all_artifacts):
+            rows.append(
+                ProjectionRow(
+                    table=str(record.get("table", record["record_type"])),
+                    values=_projection_values(record),
+                    conflict_columns=tuple(str(column) for column in record.get("conflict_columns", ("artifact_id",))),
+                )
+            )
         return tuple(rows)
 
     def reindex(self, connection: Any) -> None:
@@ -149,17 +184,35 @@ class TaskRuntimeProjector:
     def sync_task(self, connection: Any, task_id: str) -> None:
         for row in self.rows_for_task(task_id):
             self._upsert_row(connection, row)
+        all_artifacts = [
+            {
+                "artifact_id": artifact.artifact_id,
+                "task_id": artifact.task_id,
+                "artifact_type": artifact.artifact_type,
+                "payload": artifact.payload,
+            }
+            for artifact in self.store.all_artifacts()
+        ]
+        for record in build_user_profile_records(all_artifacts):
+            row = ProjectionRow(
+                table=str(record.get("table", record["record_type"])),
+                values=_projection_values(record),
+                conflict_columns=tuple(str(column) for column in record.get("conflict_columns", ("artifact_id",))),
+            )
+            self._upsert_row(connection, row)
 
     def _upsert_row(self, connection: Any, row: ProjectionRow) -> None:
         columns = list(row.values.keys())
         placeholders = ", ".join(["%s"] * len(columns))
         assignments = ", ".join(
-            f"{column} = EXCLUDED.{column}" for column in columns if column not in {"artifact_id"}
+            f"{column} = EXCLUDED.{column}" for column in columns if column not in row.conflict_columns
         )
+        if not assignments:
+            assignments = ", ".join(f"{column} = EXCLUDED.{column}" for column in columns)
         sql = (
             f"INSERT INTO {row.table} ({', '.join(columns)}) "
             f"VALUES ({placeholders}) "
-            f"ON CONFLICT (artifact_id) DO UPDATE SET {assignments}"
+            f"ON CONFLICT ({', '.join(row.conflict_columns)}) DO UPDATE SET {assignments}"
         )
         values = [self._adapt(row.values[column]) for column in columns]
         with connection.cursor() as cursor:
@@ -174,3 +227,19 @@ class TaskRuntimeProjector:
         if isinstance(value, dict) and Jsonb is not None:
             return Jsonb(value)
         return value
+
+
+def _projection_values(record: dict[str, Any]) -> dict[str, Any]:
+    if str(record.get("record_type", "")) == "user_profile":
+        return {
+            "profile_key": record.get("profile_key"),
+            "artifact_id": record.get("artifact_id"),
+            "summary": record.get("summary"),
+            "payload": record.get("payload"),
+            "embedding": record.get("embedding"),
+        }
+    return {
+        key: value
+        for key, value in record.items()
+        if key not in {"table", "record_type", "conflict_columns"}
+    }
