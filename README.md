@@ -46,7 +46,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - Traceable decisions: interpretation, extraction, coverage, schema evolution, retries, and failures are persisted as lineage.
 - Lower waste, fewer hallucinations: gap-directed retries reduce token burn, redundant prompting, malformed search, and unsupported guesses.
 - Operational surfaces: the same runtime is exposed through Web, PostgreSQL, MCP, Codex, Claude Code, and LM Studio.
-- Local-first control: run with LM Studio or Ollama, keep data in PostgreSQL, inspect everything in Flask, and avoid a black-box hosted pipeline.
+- Flexible deployment control: run locally with LM Studio or Ollama, use OpenAI-compatible APIs or Gemini APIs when needed, keep data in PostgreSQL, inspect everything in Flask, and avoid locking the runtime to a single hosted pipeline.
 
 ## Why It Is Better Than Static Extraction
 
