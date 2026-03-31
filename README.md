@@ -8,19 +8,20 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-336791?logo=postgresql&logoColor=white)](#current-working-stack)
 [![Flask UI](https://img.shields.io/badge/Flask%20UI-Supported-F59E0B?logo=flask&logoColor=white)](#public-surfaces)
 
-Task-first, self-evolving schema runtime for local LLM workflows.
+Task-first runtime for schema evolution, shared memory, and gap-driven agent workflows.
 
-TraceRelay is a local-first system that lets an LLM:
+TraceRelay is a local-first system that lets an LLM or agent:
 
-- interpret a task,
-- decide the schema family,
+- interpret a task and resolve the subject,
+- reuse prior memory before taking the next step,
 - generate or reuse a schema,
 - extract structured information,
-- detect when the schema is insufficient,
-- add new keys and relations,
+- detect whether the current gap is missing values or missing structure,
+- add new keys and relations only when they are truly needed,
+- plan the next search or follow-up action from known facts and open gaps,
 - re-run extraction until the task is filled or the loop limit is reached.
 
-Every step is persisted as lineage, projected into PostgreSQL, browsable in Flask, and exposed through MCP.
+Every run is persisted as inspectable lineage, projected into PostgreSQL, browsable in Flask, and shared live through MCP, Codex, Claude Code, and LM Studio.
 
 ## Benchmark Snapshot
 
@@ -62,6 +63,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - Self-evolving structure: TraceRelay starts with the schema you need now, then adds fields and relations only when the task proves they are required.
 - Context-scoped memory: daily work, deep research, and coding investigations do not get dumped into one noisy global memory pool.
 - Better search inputs: later searches are driven by missing fields, missing relations, evolved schema versions, and prior extracted facts.
+- Gap-driven next actions: TraceRelay can tell an agent what is still missing, whether the gap is values or structure, and which search phrases to try next.
 - Relay memory across long tasks: each extraction round leaves behind structured outputs that the next round can reuse.
 - Shared memory across agents: Codex, Claude Code, LM Studio, and MCP clients can work against the same live memory and lineage instead of keeping isolated assistant-local recall.
 - Traceable decisions: interpretation, extraction, coverage, schema evolution, retries, and failures are persisted as lineage.
@@ -118,6 +120,7 @@ Codex and Claude Code are supported as plugins.
 LM Studio is not a plugin target here. It connects to the running TraceRelay MCP server directly.
 Plugin routing is more conservative than direct MCP use, so the plugin relies on TraceRelay-specific skills and MCP settings to decide when to auto-run tools.
 Before using either plugin, start the docker stack so the shared MCP endpoint is live: `docker compose up -d --build postgres web mcp`.
+The plugin is designed to prefer TraceRelay before broad search: first structure or continue the task, then inspect information gaps, then prepare grounded search queries only if external search is still needed.
 
 ### Codex
 
@@ -161,6 +164,7 @@ These phrases tend to trigger TraceRelay tools reliably in plugin mode:
 - "Structure this subject and keep the TraceRelay lineage visible."
 - "Use prior memory for Google and explain why the last run retried."
 - "Inspect the latest TraceRelay task, schema changes, and recalled memory."
+- "Before searching again, tell me what information is still missing and what queries we should run."
 
 ## Core Flow
 
@@ -198,6 +202,10 @@ flowchart TD
     T --> P
     Q -->|Complete| U[Persist Artifact Lineage]
 
+    U --> V1[Analyze Information Gaps]
+    V1 --> V2[Plan Next Step]
+    V2 --> V3[Prepare Search Queries]
+
     V[LM Studio / Ollama / OpenAI / Gemini] --> K
     V --> N
     V --> P
@@ -206,7 +214,7 @@ flowchart TD
     U --> W[Memory Documents, Task Contexts, User Profiles]
     U --> X[Project to PostgreSQL]
     X --> Y[Flask UI and API]
-    X --> Z[MCP resources]
+    X --> Z[MCP tools and resources]
     E -->|read path| Y
     H -->|read path| Z
 ```
@@ -216,6 +224,7 @@ Notes:
 - Codex and Claude Code enter through plugin-managed HTTP MCP.
 - LM Studio enters through TraceRelay's MCP server over HTTP at `/mcp`.
 - MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
+- After each run, TraceRelay can expose gap analysis, next-step planning, and grounded search-query suggestions through MCP and HTTP APIs.
 - Flask is a read surface over PostgreSQL projection, not a second runtime.
 - Memory and lineage are shared across all of these surfaces once a run is persisted.
 
@@ -254,6 +263,10 @@ TraceRelay Runtime
 │  ├─ coverage report
 │  ├─ re-extract if values are missing
 │  └─ evolve schema if structure is missing
+├─ Action Planning
+│  ├─ information gap analysis
+│  ├─ next-step recommendation
+│  └─ grounded search query planning
 ├─ Persistence
 │  ├─ artifact lineage in JSONL
 │  ├─ memory documents
@@ -571,6 +584,9 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `/api/tasks/<task_id>/schema`
 - `/api/tasks/<task_id>/events`
 - `/api/tasks/<task_id>/trace`
+- `/api/tasks/<task_id>/gaps`
+- `/api/tasks/<task_id>/queries`
+- `/api/tasks/<task_id>/next-step`
 - `/api/memory/search?q=<query>`
 - `/api/memory/profile`
 - `/api/memory/subjects/<subject>`
@@ -579,6 +595,12 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 ### MCP Tools
 
 - `task_evolve`
+- `continue_prior_work`
+- `structure_subject`
+- `inspect_latest_changes`
+- `analyze_information_gaps`
+- `prepare_search_queries`
+- `plan_next_step`
 - `task_trace`
 - `schema_status`
 - `schema_apply`
@@ -597,6 +619,9 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `tracerelay://tasks/{task_id}/schema`
 - `tracerelay://tasks/{task_id}/events`
 - `tracerelay://tasks/{task_id}/trace`
+- `tracerelay://tasks/{task_id}/gaps`
+- `tracerelay://tasks/{task_id}/queries`
+- `tracerelay://tasks/{task_id}/next-step`
 - `tracerelay://memory/profile`
 - `tracerelay://memory/profile/{profile_id}`
 - `tracerelay://memory/subjects/{subject}`

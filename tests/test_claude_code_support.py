@@ -15,6 +15,7 @@ def test_claude_plugin_manifest_has_expected_shape() -> None:
     assert "structure_subject" in manifest["description"]
     assert "continue_prior_work" in manifest["description"]
     assert "inspect_latest_changes" in manifest["description"]
+    assert "plan_next_step" in manifest["description"]
 
 
 def test_claude_marketplace_manifest_references_local_plugin() -> None:
@@ -60,6 +61,8 @@ def test_claude_plugin_shares_generic_routing_skills() -> None:
     assert "structure_subject" in plugin_readme
     assert "continue_prior_work" in plugin_readme
     assert "inspect_latest_changes" in plugin_readme
+    assert "plan_next_step" in plugin_readme
+    assert "prepare_search_queries" in plugin_readme
     assert "continue this investigation" in continue_skill
     assert "what changed" in changed_skill
     assert "structure this" in structure_skill

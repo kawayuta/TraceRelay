@@ -8,6 +8,11 @@ from urllib.parse import quote
 
 from flask import Flask, abort, jsonify, render_template, request
 
+from ..action_planning import (
+    build_information_gap_analysis,
+    build_next_step_plan,
+    build_search_query_plan,
+)
 from .repository import TaskBrowseRepository
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3040-\u30ff\u4e00-\u9fff]+")
@@ -126,6 +131,29 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     def get_task_trace(task_id: str) -> object:
         try:
             return jsonify(repository.get_task_trace(task_id))
+        except KeyError:
+            abort(404)
+
+    @app.get("/api/tasks/<task_id>/gaps")
+    def get_task_gaps(task_id: str) -> object:
+        try:
+            return jsonify(build_information_gap_analysis(repository, task_id))
+        except KeyError:
+            abort(404)
+
+    @app.get("/api/tasks/<task_id>/queries")
+    def get_task_queries(task_id: str) -> object:
+        try:
+            limit = _bounded_limit(request.args.get("limit", "5"), default=5, maximum=10)
+            return jsonify(build_search_query_plan(repository, task_id, limit=limit))
+        except KeyError:
+            abort(404)
+
+    @app.get("/api/tasks/<task_id>/next-step")
+    def get_task_next_step(task_id: str) -> object:
+        try:
+            limit = _bounded_limit(request.args.get("limit", "5"), default=5, maximum=10)
+            return jsonify(build_next_step_plan(repository, task_id, limit=limit))
         except KeyError:
             abort(404)
 

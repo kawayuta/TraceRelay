@@ -10,6 +10,12 @@ except Exception:  # pragma: no cover
 
 from mcp.server.fastmcp import FastMCP
 
+from ..action_planning import (
+    build_information_gap_analysis,
+    build_next_step_plan,
+    build_search_query_plan,
+    build_subject_bootstrap_plan,
+)
 from ..config import postgres_dsn_from_env
 from ..llm import LLMError
 from ..indexer.loader import TaskRuntimeProjector
@@ -48,6 +54,18 @@ def list_tools() -> list[dict[str, object]]:
         {"name": "memory_profile", "description": "Read the workspace profile memory snapshot."},
         {"name": "subject_memory", "description": "Read subject memory and recalled learnings."},
         {"name": "task_memory_context", "description": "Read task memory context for follow-up prompts."},
+        {
+            "name": "analyze_information_gaps",
+            "description": "Explain which values, fields, or relations are still missing and what is already known.",
+        },
+        {
+            "name": "prepare_search_queries",
+            "description": "Generate narrow search queries based on the current gaps, known facts, and active schema.",
+        },
+        {
+            "name": "plan_next_step",
+            "description": "Recommend the next TraceRelay action, pre-search checks, and targeted queries before generic search.",
+        },
     ]
 
 
@@ -103,6 +121,9 @@ class MCPToolbox:
                 "run": run,
                 "trace": self.repository.get_task_trace(task_id),
                 "task_memory": build_task_memory_context(self.repository, task_id, limit=limit),
+                "information_gaps": build_information_gap_analysis(self.repository, task_id),
+                "search_queries": build_search_query_plan(self.repository, task_id, limit=limit),
+                "next_step": build_next_step_plan(self.repository, task_id, limit=limit),
             }
             logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
             return result
@@ -115,6 +136,9 @@ class MCPToolbox:
                 "run": run,
                 "schema": self.repository.get_task_schema(task_id),
                 "trace": self.repository.get_task_trace(task_id),
+                "information_gaps": build_information_gap_analysis(self.repository, task_id),
+                "search_queries": build_search_query_plan(self.repository, task_id),
+                "next_step": build_next_step_plan(self.repository, task_id),
             }
             logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
             return result
@@ -135,7 +159,51 @@ class MCPToolbox:
                 "schema": self.repository.get_task_schema(task_id),
                 "events": self.repository.get_task_events(task_id),
                 "task_memory": build_task_memory_context(self.repository, task_id, limit=6),
+                "information_gaps": build_information_gap_analysis(self.repository, task_id),
+                "search_queries": build_search_query_plan(self.repository, task_id, limit=6),
+                "next_step": build_next_step_plan(self.repository, task_id, limit=6),
             }
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "analyze_information_gaps":
+            subject = _optional_string(arguments.get("subject"))
+            task_id = self._resolve_latest_task_id(
+                task_id=_optional_string(arguments.get("task_id")),
+                subject=subject,
+            )
+            if task_id is None:
+                result = {"found": False, **build_subject_bootstrap_plan(subject or "subject")}
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
+            result = {"found": True, **build_information_gap_analysis(self.repository, task_id)}
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "prepare_search_queries":
+            subject = _optional_string(arguments.get("subject"))
+            task_id = self._resolve_latest_task_id(
+                task_id=_optional_string(arguments.get("task_id")),
+                subject=subject,
+            )
+            limit = int(arguments.get("limit", 5))
+            if task_id is None:
+                result = {"found": False, **build_subject_bootstrap_plan(subject or "subject", limit=limit)}
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
+            result = {"found": True, **build_search_query_plan(self.repository, task_id, limit=limit)}
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "plan_next_step":
+            subject = _optional_string(arguments.get("subject"))
+            task_id = self._resolve_latest_task_id(
+                task_id=_optional_string(arguments.get("task_id")),
+                subject=subject,
+            )
+            limit = int(arguments.get("limit", 5))
+            if task_id is None:
+                result = {"found": False, **build_subject_bootstrap_plan(subject or "subject", limit=limit)}
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
+            result = {"found": True, **build_next_step_plan(self.repository, task_id, limit=limit)}
             logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
             return result
         if name == "task_trace":
@@ -377,6 +445,61 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
         )
 
     @mcp.tool(
+        name="analyze_information_gaps",
+        description="Explain which values, fields, or relations are still missing and what is already known.",
+    )
+    def analyze_information_gaps(task_id: str | None = None, subject: str | None = None) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "analyze_information_gaps",
+                {
+                    **({"task_id": task_id} if task_id else {}),
+                    **({"subject": subject} if subject else {}),
+                },
+            )
+        )
+
+    @mcp.tool(
+        name="prepare_search_queries",
+        description="Generate narrow search queries based on the current gaps, known facts, and active schema.",
+    )
+    def prepare_search_queries(
+        task_id: str | None = None,
+        subject: str | None = None,
+        limit: int = 5,
+    ) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "prepare_search_queries",
+                {
+                    **({"task_id": task_id} if task_id else {}),
+                    **({"subject": subject} if subject else {}),
+                    "limit": limit,
+                },
+            )
+        )
+
+    @mcp.tool(
+        name="plan_next_step",
+        description="Recommend the next TraceRelay action, pre-search checks, and targeted queries before generic search.",
+    )
+    def plan_next_step(
+        task_id: str | None = None,
+        subject: str | None = None,
+        limit: int = 5,
+    ) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "plan_next_step",
+                {
+                    **({"task_id": task_id} if task_id else {}),
+                    **({"subject": subject} if subject else {}),
+                    "limit": limit,
+                },
+            )
+        )
+
+    @mcp.tool(
         name="task_trace",
         description="Return the task flowchart and decision trace.",
     )
@@ -469,9 +592,13 @@ def _summarize_arguments(arguments: dict[str, object]) -> dict[str, object]:
 def _summarize_result(result: object) -> dict[str, object]:
     if isinstance(result, dict):
         summary: dict[str, object] = {}
-        for key in ("task_id", "status", "reason", "found", "applied"):
+        for key in ("task_id", "status", "reason", "found", "applied", "recommended_tool"):
             if key in result:
                 summary[key] = result[key]
+        if "queries" in result and isinstance(result["queries"], list):
+            summary["queries"] = len(result["queries"])
+        if "recommended_queries" in result and isinstance(result["recommended_queries"], list):
+            summary["recommended_queries"] = len(result["recommended_queries"])
         if "run" in result and isinstance(result["run"], dict):
             run = result["run"]
             summary["run"] = {

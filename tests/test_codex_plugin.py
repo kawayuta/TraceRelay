@@ -16,6 +16,8 @@ def test_plugin_manifest_has_expected_shape() -> None:
     assert "[TODO:" not in json.dumps(manifest)
     assert manifest["interface"]["displayName"] == "TraceRelay"
     assert manifest["interface"]["composerIcon"] == "./assets/tracerelay-icon.svg"
+    assert "plan_next_step" in json.dumps(manifest["interface"]["defaultPrompt"])
+    assert "prepare_search_queries" in json.dumps(manifest["interface"]["defaultPrompt"])
     assert manifest["interface"]["screenshots"] == [
         "./assets/tasks-page.png",
         "./assets/google-trace-page.png",
@@ -35,6 +37,8 @@ def test_plugin_skills_exist_and_cover_auto_routing() -> None:
     changed_skill = (PLUGIN_ROOT / "skills" / "what-changed" / "SKILL.md").read_text()
     structure_skill = (PLUGIN_ROOT / "skills" / "structure-this" / "SKILL.md").read_text()
     assert "Do not wait for the user to name the tools explicitly" in use_skill
+    assert "plan_next_step" in use_skill
+    assert "prepare_search_queries" in use_skill
     assert "continue what we learned" in routing_skill
     assert "pick up where we left off" in continue_skill
     assert "what changed" in changed_skill

@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Smart Routing"
   short_description: "Route structured investigations, continuity, and change review into TraceRelay"
-  default_prompt: "Use structure_subject for structured profiling, continue_prior_work for continuity, and inspect_latest_changes for retry or schema-change review."
+  default_prompt: "Use structure_subject, continue_prior_work, or inspect_latest_changes first, then plan_next_step and prepare_search_queries before generic search or ad hoc action."
 
 dependencies:
   tools:

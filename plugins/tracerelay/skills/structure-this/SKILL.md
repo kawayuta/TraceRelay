@@ -16,9 +16,12 @@ Use this skill when the request sounds like:
 ## Preferred Tool Order
 
 1. `structure_subject`
-2. `schema_status`
-3. `task_trace`
+2. `plan_next_step`
+3. `analyze_information_gaps`
+4. `schema_status`
+5. `task_trace`
 
 ## Rule
 
 When the user asks for structured understanding rather than a plain answer, use `structure_subject` first.
+If the user then wants external search or follow-up work, use `plan_next_step` before inventing new queries.

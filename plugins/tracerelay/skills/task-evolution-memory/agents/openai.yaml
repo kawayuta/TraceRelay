@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Task Evolution"
   short_description: "Evolve schema and memory while the task runs"
-  default_prompt: "Use structure_subject to grow schema only when needed, continue_prior_work to reuse memory across attempts, and inspect_latest_changes to review retries."
+  default_prompt: "Use structure_subject or continue_prior_work first, then plan_next_step, analyze_information_gaps, and prepare_search_queries before generic search or free-form action."
 
 dependencies:
   tools:

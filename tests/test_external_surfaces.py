@@ -373,6 +373,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "continue_prior_work",
         "structure_subject",
         "inspect_latest_changes",
+        "analyze_information_gaps",
+        "prepare_search_queries",
+        "plan_next_step",
         "task_trace",
         "schema_status",
         "schema_apply",
@@ -384,6 +387,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "continue_prior_work",
         "structure_subject",
         "inspect_latest_changes",
+        "analyze_information_gaps",
+        "prepare_search_queries",
+        "plan_next_step",
         "task_trace",
         "schema_status",
         "schema_apply",
@@ -397,6 +403,15 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     assert "tracerelay://tasks/{task_id}/trace" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://tasks/{task_id}/gaps" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://tasks/{task_id}/queries" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://tasks/{task_id}/next-step" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     assert {prompt.name for prompt in server.list_prompts()} >= {
@@ -425,14 +440,25 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     latest_changes = server.call_tool("inspect_latest_changes", {"subject": "Google"})
     assert latest_changes["found"] is True
     assert latest_changes["task"]["task_id"] == latest_changes["task_id"]
+    assert latest_changes["next_step"]["recommended_queries"]
     task_trace_result = server.call_tool("task_trace", {"task_id": google.task_id})
     assert task_trace_result["summary"]["family"] == "organization"
+    gap_result = server.call_tool("analyze_information_gaps", {"task_id": google.task_id})
+    assert gap_result["found"] is True
+    assert gap_result["subject"] == "Google"
+    query_result = server.call_tool("prepare_search_queries", {"task_id": google.task_id})
+    assert query_result["queries"]
+    next_step_result = server.call_tool("plan_next_step", {"task_id": google.task_id})
+    assert next_step_result["recommended_tool"]
     apply_result = server.call_tool("schema_apply", {"task_id": google.task_id})
     assert apply_result["applied"] is True
     events = server.read_resource(f"tracerelay://tasks/{google.task_id}/events")
     assert any(event["kind"] == "schema_apply_confirmed" for event in events)
     trace_resource = server.read_resource(f"tracerelay://tasks/{google.task_id}/trace")
     assert trace_resource["summary"]["status"] == "success"
+    assert server.read_resource(f"tracerelay://tasks/{google.task_id}/gaps")["subject"] == "Google"
+    assert server.read_resource(f"tracerelay://tasks/{google.task_id}/queries")["queries"]
+    assert server.read_resource(f"tracerelay://tasks/{google.task_id}/next-step")["recommended_actions"]
     search_results = server.call_tool("artifact_search", {"query": "Google"})
     assert search_results[0]["task_id"] == google.task_id
     assert "Google" in server.render_prompt("investigate_subject", {"subject": "Google"})
@@ -536,6 +562,44 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"
     assert server.read_resource("tracerelay://memory/subjects/Google")["subject"] == "Google"
     assert server.read_resource(f"tracerelay://memory/tasks/{google.task_id}")["task_id"] == google.task_id
+
+
+def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store, max_schema_rounds=0)
+    run = runtime.run_task(
+        TaskSpec(
+            prompt="Googleの事業内容に加えて、主要経営陣、主要子会社、主要買収案件、主要競合、主要リスク、地域別展開も構造化して整理して"
+        )
+    )
+    assert run.reason == "schema_evolution_required"
+
+    repository = TaskRepository(store)
+    app = create_app(repository)
+    client = app.test_client()
+
+    gaps = client.get(f"/api/tasks/{run.task_id}/gaps").get_json()
+    assert gaps["dominant_issue"] == "schema"
+    assert gaps["needs_schema_evolution"] is True
+    assert gaps["missing_fields"] or gaps["missing_relations"]
+
+    queries = client.get(f"/api/tasks/{run.task_id}/queries").get_json()
+    assert queries["queries"]
+    assert "Google" in queries["queries"][0]["query"]
+
+    next_step = client.get(f"/api/tasks/{run.task_id}/next-step").get_json()
+    assert next_step["recommended_tool"] == "continue_prior_work"
+    assert any(item["tool"] == "prepare_search_queries" for item in next_step["recommended_actions"])
+    assert any("task_memory_context" in item for item in next_step["pre_search_checks"])
+
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    gap_result = server.call_tool("analyze_information_gaps", {"task_id": run.task_id})
+    assert gap_result["dominant_issue"] == "schema"
+    query_result = server.call_tool("prepare_search_queries", {"task_id": run.task_id})
+    assert query_result["queries"]
+    next_result = server.call_tool("plan_next_step", {"task_id": run.task_id})
+    assert next_result["recommended_tool"] == "continue_prior_work"
+    assert next_result["recommended_queries"]
 
 
 def test_lm_studio_http_integration(tmp_path):

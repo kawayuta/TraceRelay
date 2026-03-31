@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from ..action_planning import (
+    build_information_gap_analysis,
+    build_next_step_plan,
+    build_search_query_plan,
+)
 from ..web.repository import TaskBrowseRepository
 
 
@@ -28,6 +33,21 @@ def list_resources() -> list[dict[str, object]]:
             "uri": "tracerelay://tasks/{task_id}/trace",
             "name": "trace",
             "description": "Read task flowchart and decision trace",
+        },
+        {
+            "uri": "tracerelay://tasks/{task_id}/gaps",
+            "name": "gaps",
+            "description": "Read information gaps for the task",
+        },
+        {
+            "uri": "tracerelay://tasks/{task_id}/queries",
+            "name": "queries",
+            "description": "Read recommended search queries for the task",
+        },
+        {
+            "uri": "tracerelay://tasks/{task_id}/next-step",
+            "name": "next_step",
+            "description": "Read the recommended next actions for the task",
         },
         {"uri": "tracerelay://memory/profile", "name": "memory_profile", "description": "Read workspace profile memory"},
         {
@@ -107,6 +127,33 @@ def register_resources(mcp: FastMCP, repository: TaskBrowseRepository) -> None:
     )
     def trace(task_id: str) -> dict[str, object]:
         return repository.get_task_trace(task_id)
+
+    @mcp.resource(
+        "tracerelay://tasks/{task_id}/gaps",
+        name="gaps",
+        description="Read information gaps for the task",
+        mime_type="application/json",
+    )
+    def gaps(task_id: str) -> dict[str, object]:
+        return build_information_gap_analysis(repository, task_id)
+
+    @mcp.resource(
+        "tracerelay://tasks/{task_id}/queries",
+        name="queries",
+        description="Read recommended search queries for the task",
+        mime_type="application/json",
+    )
+    def queries(task_id: str) -> dict[str, object]:
+        return build_search_query_plan(repository, task_id)
+
+    @mcp.resource(
+        "tracerelay://tasks/{task_id}/next-step",
+        name="next_step",
+        description="Read the recommended next actions for the task",
+        mime_type="application/json",
+    )
+    def next_step(task_id: str) -> dict[str, object]:
+        return build_next_step_plan(repository, task_id)
 
     @mcp.resource(
         "tracerelay://memory/profile",

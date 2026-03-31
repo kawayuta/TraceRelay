@@ -16,10 +16,13 @@ Use this skill when the request sounds like:
 ## Preferred Tool Order
 
 1. `inspect_latest_changes`
-2. `task_trace`
-3. `schema_status`
-4. `artifact_read`
+2. `analyze_information_gaps`
+3. `plan_next_step`
+4. `task_trace`
+5. `schema_status`
+6. `artifact_read`
 
 ## Rule
 
 Prefer runtime evidence and lineage over a guessed narrative.
+If the user wants to know what to do next, use `plan_next_step` instead of inventing a free-form action plan.
