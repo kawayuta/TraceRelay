@@ -10,9 +10,15 @@ from mcp.server.fastmcp import FastMCP
 from schemaledger.config import DEFAULT_POSTGRES_DSN
 from schemaledger.indexer.loader import TaskRuntimeProjector
 from schemaledger.llm import (
+    GeminiClient,
+    GeminiConfig,
+    GeminiStructuredLLM,
     LMStudioClient,
     LMStudioConfig,
     LMStudioStructuredLLM,
+    OpenAIClient,
+    OpenAIConfig,
+    OpenAIStructuredLLM,
     OllamaClient,
     OllamaConfig,
     OllamaStructuredLLM,
@@ -189,6 +195,112 @@ def _fake_ollama_urlopen(req, timeout=None):  # noqa: ANN001
         "done": True,
         "done_reason": "stop",
         "message": {"role": "assistant", "content": json.dumps(content)},
+    }
+    return _FakeHTTPResponse(raw)
+
+
+def _fake_openai_urlopen(req, timeout=None):  # noqa: ANN001
+    assert req.full_url.endswith("/v1/chat/completions")
+    assert req.headers["Authorization"] == "Bearer test-openai-key"
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload["response_format"]["type"] == "json_schema"
+    assert payload["response_format"]["json_schema"]["strict"] is True
+    assert payload["model"] == "gpt-4.1-mini"
+    system_prompt = payload["messages"][0]["content"]
+    if "TASK_INTERPRETATION" in system_prompt:
+        content = {
+            "intent": "investigate_subject",
+            "resolved_subject": "ACME Hypergrid",
+            "subject_candidates": ["ACME Hypergrid"],
+            "family": "organization",
+            "family_rationale": "The prompt requests an organization profile.",
+            "requested_fields": ["overview", "business_lines"],
+            "requested_relations": [],
+            "scope_hints": ["overview", "business_lines"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+    elif "INITIAL_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Initial organization schema.",
+        }
+    elif "EVOLVE_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": ["leadership"],
+            "relations": [],
+            "rationale": "Add leadership if needed.",
+        }
+    else:
+        content = {
+            "payload": {
+                "overview": "ACME Hypergrid organization profile",
+                "business_lines": ["grid control", "monitoring"],
+            },
+            "status": "success",
+        }
+    raw = {"choices": [{"message": {"content": json.dumps(content)}}]}
+    return _FakeHTTPResponse(raw)
+
+
+def _fake_gemini_urlopen(req, timeout=None):  # noqa: ANN001
+    assert ":generateContent?" in req.full_url
+    assert "key=test-gemini-key" in req.full_url
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload["generationConfig"]["responseMimeType"] == "application/json"
+    assert payload["generationConfig"]["responseJsonSchema"]["type"] == "object"
+    system_prompt = payload["systemInstruction"]["parts"][0]["text"]
+    if "TASK_INTERPRETATION" in system_prompt:
+        content = {
+            "intent": "investigate_subject",
+            "resolved_subject": "ACME Hypergrid",
+            "subject_candidates": ["ACME Hypergrid"],
+            "family": "organization",
+            "family_rationale": "The prompt requests an organization profile.",
+            "requested_fields": ["overview", "business_lines"],
+            "requested_relations": [],
+            "scope_hints": ["overview", "business_lines"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+    elif "INITIAL_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Initial organization schema.",
+        }
+    elif "EVOLVE_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": ["leadership"],
+            "relations": [],
+            "rationale": "Add leadership if needed.",
+        }
+    else:
+        content = {
+            "payload": {
+                "overview": "ACME Hypergrid organization profile",
+                "business_lines": ["grid control", "monitoring"],
+            },
+            "status": "success",
+        }
+    raw = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [{"text": json.dumps(content)}],
+                },
+                "finishReason": "STOP",
+            }
+        ]
     }
     return _FakeHTTPResponse(raw)
 
@@ -472,6 +584,46 @@ def test_ollama_http_integration(tmp_path):
     assert run.status == "success"
 
 
+def test_openai_http_integration(tmp_path):
+    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_openai_urlopen):
+        client = OpenAIClient(
+            OpenAIConfig(
+                api_key="test-openai-key",
+                model="gpt-4.1-mini",
+                timeout_s=2.0,
+            )
+        )
+        llm = OpenAIStructuredLLM(client)
+        store = JsonlArtifactStore(tmp_path / "workspace")
+        runtime = TaskRuntime(llm=llm, artifact_store=store)
+        run = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid."))
+
+    assert run.interpretation.resolved_subject == "ACME Hypergrid"
+    assert run.interpretation.family == "organization"
+    assert run.extraction.provider_metadata["provider"] == "openai"
+    assert run.status == "success"
+
+
+def test_gemini_http_integration(tmp_path):
+    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_gemini_urlopen):
+        client = GeminiClient(
+            GeminiConfig(
+                api_key="test-gemini-key",
+                model="gemini-2.5-flash",
+                timeout_s=2.0,
+            )
+        )
+        llm = GeminiStructuredLLM(client)
+        store = JsonlArtifactStore(tmp_path / "workspace")
+        runtime = TaskRuntime(llm=llm, artifact_store=store)
+        run = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid."))
+
+    assert run.interpretation.resolved_subject == "ACME Hypergrid"
+    assert run.interpretation.family == "organization"
+    assert run.extraction.provider_metadata["provider"] == "gemini"
+    assert run.status == "success"
+
+
 def test_llm_from_env_selects_ollama_provider():
     with patch.dict(
         os.environ,
@@ -485,6 +637,36 @@ def test_llm_from_env_selects_ollama_provider():
         llm = llm_from_env()
 
     assert isinstance(llm, OllamaStructuredLLM)
+
+
+def test_llm_from_env_selects_openai_provider():
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_LLM_PROVIDER": "openai",
+            "SCHEMALEDGER_OPENAI_API_KEY": "test-openai-key",
+            "SCHEMALEDGER_OPENAI_MODEL": "gpt-4.1-mini",
+        },
+        clear=True,
+    ):
+        llm = llm_from_env()
+
+    assert isinstance(llm, OpenAIStructuredLLM)
+
+
+def test_llm_from_env_selects_gemini_provider():
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_LLM_PROVIDER": "gemini",
+            "SCHEMALEDGER_GEMINI_API_KEY": "test-gemini-key",
+            "SCHEMALEDGER_GEMINI_MODEL": "gemini-2.5-flash",
+        },
+        clear=True,
+    ):
+        llm = llm_from_env()
+
+    assert isinstance(llm, GeminiStructuredLLM)
 
 
 def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):

@@ -28,13 +28,15 @@
         "SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL": "",
         "SCHEMALEDGER_OPENAI_BASE_URL": "https://api.openai.com",
         "SCHEMALEDGER_OPENAI_API_KEY": "",
+        "SCHEMALEDGER_OPENAI_MODEL": "",
         "SCHEMALEDGER_OPENAI_EMBEDDING_MODEL": "",
         "SCHEMALEDGER_GEMINI_BASE_URL": "https://generativelanguage.googleapis.com",
         "SCHEMALEDGER_GEMINI_API_KEY": "",
+        "SCHEMALEDGER_GEMINI_MODEL": "",
         "SCHEMALEDGER_GEMINI_EMBEDDING_MODEL": "",
         "SCHEMALEDGER_POSTGRES_DSN": "postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh"
       },
-      "note": "Repo-local SchemaLedger MCP server. Embedding provider can switch between LM Studio, Ollama, OpenAI, and Gemini through env vars."
+      "note": "Repo-local SchemaLedger MCP server. LLM and embedding providers can switch between LM Studio, Ollama, OpenAI, and Gemini through env vars."
     }
   }
 }

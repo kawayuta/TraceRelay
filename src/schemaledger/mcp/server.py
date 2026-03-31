@@ -158,7 +158,7 @@ def build_runtime_from_env(workspace: str) -> tuple[TaskRuntime, JsonlArtifactSt
     if llm is None:
         raise RuntimeError(
             "LLM environment is required to run the MCP server. "
-            "Configure SCHEMALEDGER_LLM_PROVIDER with either LM Studio or Ollama settings."
+            "Configure SCHEMALEDGER_LLM_PROVIDER with LM Studio, Ollama, OpenAI, or Gemini settings."
         )
     store = JsonlArtifactStore(workspace)
     return TaskRuntime(llm=llm, artifact_store=store), store

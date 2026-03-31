@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib import request
+from urllib import parse, request
 from urllib.error import HTTPError, URLError
 
 from .models import CoverageReport, ExtractionResult, SchemaVersion, TaskInterpretation, TaskSpec
@@ -52,6 +52,22 @@ class LMStudioConfig:
 class OllamaConfig:
     base_url: str
     model: str
+    timeout_s: float = 30.0
+
+
+@dataclass(frozen=True)
+class OpenAIConfig:
+    api_key: str
+    model: str
+    base_url: str = "https://api.openai.com"
+    timeout_s: float = 30.0
+
+
+@dataclass(frozen=True)
+class GeminiConfig:
+    api_key: str
+    model: str
+    base_url: str = "https://generativelanguage.googleapis.com"
     timeout_s: float = 30.0
 
 
@@ -152,10 +168,114 @@ class OllamaClient:
         return _parse_json_message(message, provider_name="Ollama")
 
 
+class OpenAIClient:
+    def __init__(self, config: OpenAIConfig) -> None:
+        self.config = config
+
+    def complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        temperature: float = 0.0,
+    ) -> dict[str, Any]:
+        payload = {
+            "model": self.config.model,
+            "temperature": temperature,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/v1/chat/completions",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.api_key}",
+            },
+            method="POST",
+        )
+        raw = _post_json(
+            req,
+            timeout_s=self.config.timeout_s,
+            provider_name="OpenAI",
+        )
+        try:
+            message = raw["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError(f"Unexpected OpenAI payload: {raw!r}") from exc
+        return _parse_json_message(message, provider_name="OpenAI")
+
+
+class GeminiClient:
+    def __init__(self, config: GeminiConfig) -> None:
+        self.config = config
+
+    def complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        temperature: float = 0.0,
+    ) -> dict[str, Any]:
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": system_prompt}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": (
+                                f"{user_prompt}\n\n"
+                                f"Return a JSON object matching this schema name: {schema_name}."
+                            )
+                        }
+                    ],
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature,
+                "responseMimeType": "application/json",
+                "responseJsonSchema": schema,
+            },
+        }
+        body = json.dumps(payload).encode("utf-8")
+        model_name = _gemini_model_resource(self.config.model)
+        query = parse.urlencode({"key": self.config.api_key})
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/v1beta/{model_name}:generateContent?{query}",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        raw = _post_json(
+            req,
+            timeout_s=self.config.timeout_s,
+            provider_name="Gemini",
+        )
+        return _parse_gemini_response(raw)
+
+
 class _PromptDrivenStructuredLLM:
     provider = "unknown"
 
-    def __init__(self, client: LMStudioClient | OllamaClient) -> None:
+    def __init__(self, client: LMStudioClient | OllamaClient | OpenAIClient | GeminiClient) -> None:
         self.client = client
 
     def interpret_task(self, spec: TaskSpec) -> dict[str, Any]:
@@ -320,6 +440,14 @@ class OllamaStructuredLLM(_PromptDrivenStructuredLLM):
     provider = "ollama"
 
 
+class OpenAIStructuredLLM(_PromptDrivenStructuredLLM):
+    provider = "openai"
+
+
+class GeminiStructuredLLM(_PromptDrivenStructuredLLM):
+    provider = "gemini"
+
+
 def llm_from_env() -> StructuredLLM | None:
     provider = _infer_llm_provider_from_env()
     if provider == "ollama":
@@ -333,6 +461,41 @@ def llm_from_env() -> StructuredLLM | None:
                     base_url=base_url,
                     model=model,
                     timeout_s=float(os.getenv("SCHEMALEDGER_OLLAMA_TIMEOUT", "30")),
+                )
+            )
+        )
+
+    if provider == "openai":
+        api_key = os.getenv("SCHEMALEDGER_OPENAI_API_KEY")
+        model = os.getenv("SCHEMALEDGER_OPENAI_MODEL")
+        if not api_key or not model:
+            return None
+        return OpenAIStructuredLLM(
+            OpenAIClient(
+                OpenAIConfig(
+                    api_key=api_key,
+                    model=model,
+                    base_url=os.getenv("SCHEMALEDGER_OPENAI_BASE_URL", "https://api.openai.com"),
+                    timeout_s=float(os.getenv("SCHEMALEDGER_OPENAI_TIMEOUT", "30")),
+                )
+            )
+        )
+
+    if provider == "gemini":
+        api_key = os.getenv("SCHEMALEDGER_GEMINI_API_KEY")
+        model = os.getenv("SCHEMALEDGER_GEMINI_MODEL")
+        if not api_key or not model:
+            return None
+        return GeminiStructuredLLM(
+            GeminiClient(
+                GeminiConfig(
+                    api_key=api_key,
+                    model=model,
+                    base_url=os.getenv(
+                        "SCHEMALEDGER_GEMINI_BASE_URL",
+                        "https://generativelanguage.googleapis.com",
+                    ),
+                    timeout_s=float(os.getenv("SCHEMALEDGER_GEMINI_TIMEOUT", "30")),
                 )
             )
         )
@@ -354,8 +517,12 @@ def llm_from_env() -> StructuredLLM | None:
 
 def _infer_llm_provider_from_env() -> str:
     provider = os.getenv("SCHEMALEDGER_LLM_PROVIDER", "").strip().casefold()
-    if provider in {"lmstudio", "ollama"}:
+    if provider in {"lmstudio", "ollama", "openai", "gemini"}:
         return provider
+    if os.getenv("SCHEMALEDGER_OPENAI_API_KEY") and os.getenv("SCHEMALEDGER_OPENAI_MODEL"):
+        return "openai"
+    if os.getenv("SCHEMALEDGER_GEMINI_API_KEY") and os.getenv("SCHEMALEDGER_GEMINI_MODEL"):
+        return "gemini"
     if os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL") and os.getenv("SCHEMALEDGER_LM_STUDIO_MODEL"):
         return "lmstudio"
     if os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL") and os.getenv("SCHEMALEDGER_OLLAMA_MODEL"):
@@ -555,3 +722,32 @@ def _parse_json_message(message: Any, *, provider_name: str) -> dict[str, Any]:
         f"{provider_name} did not return JSON content. "
         f"candidate_sources={candidate_sources}; parse_errors={parse_errors!r}; message={message!r}"
     )
+
+
+def _parse_gemini_response(raw: dict[str, Any]) -> dict[str, Any]:
+    prompt_feedback = raw.get("promptFeedback")
+    if isinstance(prompt_feedback, dict) and prompt_feedback.get("blockReason"):
+        raise LLMError(f"Gemini blocked the prompt: {prompt_feedback!r}")
+    try:
+        candidate = raw["candidates"][0]
+        parts = candidate["content"]["parts"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LLMError(f"Unexpected Gemini payload: {raw!r}") from exc
+
+    message = {
+        "content": "".join(
+            str(part.get("text", ""))
+            for part in parts
+            if isinstance(part, dict) and "text" in part
+        )
+    }
+    if not str(message["content"]).strip():
+        raise LLMError(f"Gemini did not return JSON content: {raw!r}")
+    return _parse_json_message(message, provider_name="Gemini")
+
+
+def _gemini_model_resource(model: str) -> str:
+    value = model.strip()
+    if value.startswith("models/"):
+        return value
+    return f"models/{value}"
