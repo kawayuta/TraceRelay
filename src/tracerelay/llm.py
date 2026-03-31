@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib import parse, request
@@ -45,14 +46,14 @@ class LLMError(RuntimeError):
 class LMStudioConfig:
     base_url: str
     model: str
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
 class OllamaConfig:
     base_url: str
     model: str
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class OpenAIConfig:
     api_key: str
     model: str
     base_url: str = "https://api.openai.com"
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,7 @@ class GeminiConfig:
     api_key: str
     model: str
     base_url: str = "https://generativelanguage.googleapis.com"
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 class LMStudioClient:
@@ -460,7 +461,7 @@ def llm_from_env() -> StructuredLLM | None:
                 OllamaConfig(
                     base_url=base_url,
                     model=model,
-                    timeout_s=float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "30")),
+                    timeout_s=float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "360")),
                 )
             )
         )
@@ -476,7 +477,7 @@ def llm_from_env() -> StructuredLLM | None:
                     api_key=api_key,
                     model=model,
                     base_url=os.getenv("TRACERELAY_OPENAI_BASE_URL", "https://api.openai.com"),
-                    timeout_s=float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "30")),
+                    timeout_s=float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "360")),
                 )
             )
         )
@@ -495,7 +496,7 @@ def llm_from_env() -> StructuredLLM | None:
                         "TRACERELAY_GEMINI_BASE_URL",
                         "https://generativelanguage.googleapis.com",
                     ),
-                    timeout_s=float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "30")),
+                    timeout_s=float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "360")),
                 )
             )
         )
@@ -509,7 +510,7 @@ def llm_from_env() -> StructuredLLM | None:
             LMStudioConfig(
                 base_url=base_url,
                 model=model,
-                timeout_s=float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "30")),
+                timeout_s=float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "360")),
             )
         )
     )
@@ -705,6 +706,8 @@ def _post_json(req: request.Request, *, timeout_s: float, provider_name: str) ->
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise LLMError(f"{provider_name} request failed: HTTP {exc.code}: {body}") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise LLMError(f"{provider_name} request timed out after {timeout_s:.1f}s") from exc
     except URLError as exc:
         raise LLMError(f"{provider_name} request failed: {exc}") from exc
 

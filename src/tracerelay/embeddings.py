@@ -27,14 +27,14 @@ class TextEmbedder(Protocol):
 class LMStudioEmbeddingConfig:
     base_url: str
     model: str
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
 class OllamaEmbeddingConfig:
     base_url: str
     model: str
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class OpenAIEmbeddingConfig:
     api_key: str
     model: str
     base_url: str = "https://api.openai.com"
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class GeminiEmbeddingConfig:
     api_key: str
     model: str
     base_url: str = "https://generativelanguage.googleapis.com"
-    timeout_s: float = 30.0
+    timeout_s: float = 360.0
 
 
 class HashingTextEmbedder:
@@ -304,7 +304,7 @@ def embedder_from_env() -> TextEmbedder:
             api_key,
             model,
             base_url,
-            float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "30")),
+            float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "360")),
         )
     if provider == "gemini":
         api_key = os.getenv("TRACERELAY_GEMINI_API_KEY", "").strip()
@@ -318,13 +318,13 @@ def embedder_from_env() -> TextEmbedder:
             api_key,
             model,
             base_url,
-            float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "30")),
+            float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "360")),
         )
     if provider == "ollama":
         base_url = os.getenv("TRACERELAY_OLLAMA_BASE_URL")
         if not base_url:
             return _hash_embedder()
-        timeout_s = float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "30"))
+        timeout_s = float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "360"))
         model = os.getenv("TRACERELAY_OLLAMA_EMBEDDING_MODEL") or _detect_ollama_embedding_model(base_url, timeout_s)
         if not model:
             return _hash_embedder()
@@ -333,7 +333,7 @@ def embedder_from_env() -> TextEmbedder:
     base_url = os.getenv("TRACERELAY_LM_STUDIO_BASE_URL")
     if not base_url:
         return _hash_embedder()
-    timeout_s = float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "30"))
+    timeout_s = float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "360"))
     model = os.getenv("TRACERELAY_LM_STUDIO_EMBEDDING_MODEL") or _detect_lmstudio_embedding_model(base_url, timeout_s)
     if not model:
         return _hash_embedder()

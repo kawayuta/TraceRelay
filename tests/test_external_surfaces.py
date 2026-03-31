@@ -3,6 +3,7 @@ from __future__ import annotations
 import anyio
 import json
 import os
+import socket
 from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
@@ -303,6 +304,10 @@ def _fake_gemini_urlopen(req, timeout=None):  # noqa: ANN001
         ]
     }
     return _FakeHTTPResponse(raw)
+
+
+def _timeout_urlopen(req, timeout=None):  # noqa: ANN001
+    raise socket.timeout("timed out")
 
 
 def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
@@ -620,6 +625,27 @@ def test_lm_studio_http_integration(tmp_path):
     assert run.interpretation.family == "organization"
     assert run.extraction.provider_metadata["provider"] == "lmstudio"
     assert run.status == "success"
+
+
+def test_timeout_is_normalized_to_llm_error(tmp_path):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_timeout_urlopen):
+        client = LMStudioClient(
+            LMStudioConfig(
+                base_url="http://127.0.0.1:1234",
+                model="local-model",
+                timeout_s=2.0,
+            )
+        )
+        llm = LMStudioStructuredLLM(client)
+        store = JsonlArtifactStore(tmp_path / "workspace")
+        runtime = TaskRuntime(llm=llm, artifact_store=store)
+        repository = TaskRepository(store)
+        server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+        result = server.call_tool("task_evolve", {"prompt": "Please investigate ACME Hypergrid."})
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "llm_error"
+    assert "timed out" in result["error"]
 
 
 def test_lm_studio_parses_fenced_json_response():
