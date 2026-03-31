@@ -18,10 +18,11 @@ Use this skill for requests that sound like:
 
 ## Preferred Tool Order
 
-1. `task_evolve` for new or continuing structured runs.
-2. `task_trace` when the user wants to understand branching, retries, or schema evolution.
-3. `subject_memory` and `task_memory_context` when the user references prior work on the same subject.
-4. `schema_status` when the user asks which keys or relations were added.
+1. `structure_subject` for new structured runs or schema growth.
+2. `continue_prior_work` when the user references prior work on the same subject.
+3. `inspect_latest_changes` when the user wants to understand retries or schema evolution.
+4. `task_trace` when the user wants the full branching view.
+5. `schema_status` when the user asks which keys or relations were added.
 
 ## Rule
 

@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: What Changed"
   short_description: "Inspect the latest run, retries, and schema changes"
-  default_prompt: "Use TraceRelay to inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied."
+  default_prompt: "Use inspect_latest_changes first, then task_trace or schema_status if needed, to inspect the latest run and schema changes."
 
 dependencies:
   tools:

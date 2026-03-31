@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 try:
@@ -18,6 +19,9 @@ from ..task_runtime import TaskRuntime
 from ..task_flow import JsonlArtifactStore
 from ..web.app import build_memory_search, build_subject_memory, build_task_memory_context, build_workspace_profile_memory
 from ..web.repository import PostgresTaskRepository, TaskBrowseRepository
+
+logger = logging.getLogger("tracerelay.mcp")
+logger.setLevel(logging.INFO)
 
 
 def list_tools() -> list[dict[str, object]]:
@@ -62,6 +66,7 @@ class MCPToolbox:
         self.sync_dsn = sync_dsn
 
     def call(self, name: str, arguments: dict[str, object]) -> object:
+        logger.info("TraceRelay MCP tool start name=%s args=%s", name, _summarize_arguments(arguments))
         if name == "task_evolve":
             prompt = str(arguments["prompt"])
             task_ids_before = set(self.store.list_task_ids())
@@ -69,14 +74,18 @@ class MCPToolbox:
                 run = self.runtime.run_task(self.runtime_task_spec(prompt))
             except Exception as exc:
                 task_id = self._finalize_failed_task(task_ids_before, exc)
-                return {
+                result = {
                     "task_id": task_id,
                     "status": "failed",
                     "reason": self._failure_reason(exc),
                     "error": str(exc),
                 }
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
             self._sync_task(run.task_id)
-            return {"task_id": run.task_id, "status": run.status, "reason": run.reason}
+            result = {"task_id": run.task_id, "status": run.status, "reason": run.reason}
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "continue_prior_work":
             prompt = str(arguments["prompt"])
             subject = _optional_string(arguments.get("subject"))
@@ -88,31 +97,37 @@ class MCPToolbox:
             )
             run = dict(self.call("task_evolve", {"prompt": prompt}))
             task_id = str(run["task_id"])
-            return {
+            result = {
                 "task_id": task_id,
                 "recalled": recall,
                 "run": run,
                 "trace": self.repository.get_task_trace(task_id),
                 "task_memory": build_task_memory_context(self.repository, task_id, limit=limit),
             }
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "structure_subject":
             prompt = str(arguments["prompt"])
             run = dict(self.call("task_evolve", {"prompt": prompt}))
             task_id = str(run["task_id"])
-            return {
+            result = {
                 "task_id": task_id,
                 "run": run,
                 "schema": self.repository.get_task_schema(task_id),
                 "trace": self.repository.get_task_trace(task_id),
             }
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "inspect_latest_changes":
             task_id = self._resolve_latest_task_id(
                 task_id=_optional_string(arguments.get("task_id")),
                 subject=_optional_string(arguments.get("subject")),
             )
             if task_id is None:
-                return {"found": False, "reason": "no_tasks"}
-            return {
+                result = {"found": False, "reason": "no_tasks"}
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
+            result = {
                 "found": True,
                 "task_id": task_id,
                 "task": self.repository.get_task(task_id),
@@ -121,42 +136,62 @@ class MCPToolbox:
                 "events": self.repository.get_task_events(task_id),
                 "task_memory": build_task_memory_context(self.repository, task_id, limit=6),
             }
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "task_trace":
-            return self.repository.get_task_trace(str(arguments["task_id"]))
+            result = self.repository.get_task_trace(str(arguments["task_id"]))
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "schema_status":
-            return self.repository.get_task_schema(str(arguments["task_id"]))
+            result = self.repository.get_task_schema(str(arguments["task_id"]))
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "schema_apply":
-            return self._apply_schema(str(arguments["task_id"]))
+            result = self._apply_schema(str(arguments["task_id"]))
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "artifact_read":
-            return self.repository.read_artifacts(
+            result = self.repository.read_artifacts(
                 str(arguments["task_id"]),
                 str(arguments["artifact_type"]) if "artifact_type" in arguments else None,
             )
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "artifact_search":
-            return self.repository.search(str(arguments["query"]))
+            result = self.repository.search(str(arguments["query"]))
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "memory_search":
-            return build_memory_search(
+            result = build_memory_search(
                 self.repository,
                 str(arguments["query"]),
                 limit=int(arguments.get("limit", 8)),
             )
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "memory_profile":
-            return build_workspace_profile_memory(
+            result = build_workspace_profile_memory(
                 self.repository,
                 profile_id=str(arguments.get("profile_id", "workspace")),
             )
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "subject_memory":
-            return build_subject_memory(
+            result = build_subject_memory(
                 self.repository,
                 str(arguments["subject"]),
                 limit=int(arguments.get("limit", 6)),
             )
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         if name == "task_memory_context":
-            return build_task_memory_context(
+            result = build_task_memory_context(
                 self.repository,
                 str(arguments["task_id"]),
                 limit=int(arguments.get("limit", 6)),
             )
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
         raise KeyError(name)
 
     def runtime_task_spec(self, prompt: str):
@@ -418,3 +453,47 @@ def _optional_string(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _summarize_arguments(arguments: dict[str, object]) -> dict[str, object]:
+    summary: dict[str, object] = {}
+    for key, value in arguments.items():
+        if key == "prompt":
+            prompt = str(value).strip()
+            summary[key] = prompt if len(prompt) <= 120 else f"{prompt[:117]}..."
+            continue
+        summary[key] = value
+    return summary
+
+
+def _summarize_result(result: object) -> dict[str, object]:
+    if isinstance(result, dict):
+        summary: dict[str, object] = {}
+        for key in ("task_id", "status", "reason", "found", "applied"):
+            if key in result:
+                summary[key] = result[key]
+        if "run" in result and isinstance(result["run"], dict):
+            run = result["run"]
+            summary["run"] = {
+                "task_id": run.get("task_id"),
+                "status": run.get("status"),
+                "reason": run.get("reason"),
+            }
+        if "schema" in result and isinstance(result["schema"], dict):
+            active_schema = result["schema"].get("active_schema")
+            if isinstance(active_schema, dict):
+                summary["schema"] = {
+                    "schema_id": active_schema.get("schema_id"),
+                    "version": active_schema.get("version"),
+                }
+        if "recalled" in result and isinstance(result["recalled"], dict):
+            summary["recalled"] = {
+                "kind": result["recalled"].get("kind"),
+                "subject": result["recalled"].get("subject"),
+            }
+        if not summary:
+            summary["keys"] = sorted(result.keys())
+        return summary
+    if isinstance(result, list):
+        return {"count": len(result)}
+    return {"type": type(result).__name__}

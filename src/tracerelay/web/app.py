@@ -905,6 +905,9 @@ def _learned_facts_from_extraction(extraction: dict[str, object]) -> list[str]:
 def _aggregate_learned_facts(tasks: list[dict[str, object]]) -> list[str]:
     facts: list[str] = []
     for task in tasks:
+        if task.get("learned_facts"):
+            facts.extend(str(item) for item in task.get("learned_facts", []))
+            continue
         facts.extend(_learned_facts_from_task(task))
     return list(dict.fromkeys(facts))
 

@@ -15,10 +15,10 @@ Use this skill when the request sounds like:
 
 ## Preferred Tool Order
 
-1. `task_evolve`
+1. `structure_subject`
 2. `schema_status`
 3. `task_trace`
 
 ## Rule
 
-When the user asks for structured understanding rather than a plain answer, use TraceRelay first.
+When the user asks for structured understanding rather than a plain answer, use `structure_subject` first.

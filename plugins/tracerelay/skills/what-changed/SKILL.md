@@ -15,9 +15,10 @@ Use this skill when the request sounds like:
 
 ## Preferred Tool Order
 
-1. `task_trace`
-2. `schema_status`
-3. `artifact_read`
+1. `inspect_latest_changes`
+2. `task_trace`
+3. `schema_status`
+4. `artifact_read`
 
 ## Rule
 

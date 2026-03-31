@@ -1,6 +1,6 @@
 {
   "name": "tracerelay",
-  "description": "Structured investigation, prior-work continuation, schema-change inspection, and memory-backed follow-up for local LLM workflows.",
+  "description": "Use structure_subject for structured profiling, continue_prior_work for continuity, and inspect_latest_changes for retry or schema-change review in local LLM workflows.",
   "version": "0.1.0",
   "author": {
     "name": "TraceRelay"

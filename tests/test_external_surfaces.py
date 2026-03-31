@@ -485,6 +485,7 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert subject_payload["kind"] == "subject"
     assert subject_payload["subject"] == "Google"
     assert subject_payload["related_tasks"][0]["task_id"] == google.task_id
+    assert subject_payload["learned_facts"]
 
     task_memory_payload = client.get(f"/api/memory/tasks/{google.task_id}").get_json()
     assert task_memory_payload["kind"] == "task"
@@ -497,6 +498,7 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     subject_html = client.get("/memory/subjects/Google")
     assert subject_html.status_code == 200
     assert "Subject Memory: Google" in subject_html.get_data(as_text=True)
+    assert "No learned facts recorded yet." not in subject_html.get_data(as_text=True)
     task_html = client.get(f"/memory/tasks/{google.task_id}")
     assert task_html.status_code == 200
     assert "Task Snapshot" in task_html.get_data(as_text=True)
@@ -528,6 +530,7 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert memory_profile_result["profile_id"] == "workspace"
     subject_memory_result = server.call_tool("subject_memory", {"subject": "Google"})
     assert subject_memory_result["subject"] == "Google"
+    assert subject_memory_result["learned_facts"]
     task_memory_result = server.call_tool("task_memory_context", {"task_id": google.task_id})
     assert task_memory_result["task_id"] == google.task_id
     assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"

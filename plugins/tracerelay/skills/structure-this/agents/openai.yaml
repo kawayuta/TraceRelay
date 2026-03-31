@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Structure This"
   short_description: "Turn a subject into structured fields, relations, and lineage"
-  default_prompt: "Use TraceRelay to turn this subject into structured fields and relations, evolving schema only when the task truly needs it."
+  default_prompt: "Use structure_subject to turn this subject into structured fields and relations, evolving schema only when the task truly needs it."
 
 dependencies:
   tools:

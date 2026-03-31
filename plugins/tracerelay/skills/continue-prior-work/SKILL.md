@@ -15,11 +15,11 @@ Use this skill when the request sounds like:
 
 ## Preferred Tool Order
 
-1. `subject_memory`
-2. `task_memory_context`
-3. `task_evolve`
-4. `task_trace`
+1. `continue_prior_work`
+2. `task_trace`
+3. `schema_status`
+4. `artifact_read`
 
 ## Rule
 
-If the user clearly expects continuity, prefer TraceRelay memory and lineage before free-form reasoning.
+If the user clearly expects continuity, prefer `continue_prior_work` before free-form reasoning.

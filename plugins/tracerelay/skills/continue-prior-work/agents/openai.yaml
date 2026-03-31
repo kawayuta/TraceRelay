@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Continue Prior Work"
   short_description: "Resume earlier work on the same subject without restarting from scratch"
-  default_prompt: "Use TraceRelay to continue earlier work on the same subject, recall prior memory, and run the next structured step."
+  default_prompt: "Use continue_prior_work to resume earlier work on the same subject, recall prior memory, and run the next structured step."
 
 dependencies:
   tools:

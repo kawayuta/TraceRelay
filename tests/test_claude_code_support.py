@@ -12,7 +12,9 @@ def test_claude_plugin_manifest_has_expected_shape() -> None:
     manifest = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "tracerelay"
     assert manifest["version"] == "0.1.0"
-    assert "prior-work continuation" in manifest["description"]
+    assert "structure_subject" in manifest["description"]
+    assert "continue_prior_work" in manifest["description"]
+    assert "inspect_latest_changes" in manifest["description"]
 
 
 def test_claude_marketplace_manifest_references_local_plugin() -> None:
@@ -54,6 +56,10 @@ def test_claude_plugin_shares_generic_routing_skills() -> None:
     changed_skill = (PLUGIN_ROOT / "skills" / "what-changed" / "SKILL.md").read_text(encoding="utf-8")
     structure_skill = (PLUGIN_ROOT / "skills" / "structure-this" / "SKILL.md").read_text(encoding="utf-8")
     assert "Natural prompts that should route well in Claude Code" in plugin_readme
+    assert "Preferred routing in Claude Code" in plugin_readme
+    assert "structure_subject" in plugin_readme
+    assert "continue_prior_work" in plugin_readme
+    assert "inspect_latest_changes" in plugin_readme
     assert "continue this investigation" in continue_skill
     assert "what changed" in changed_skill
     assert "structure this" in structure_skill

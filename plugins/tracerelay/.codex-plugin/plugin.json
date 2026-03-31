@@ -1,7 +1,7 @@
 {
   "name": "tracerelay",
   "version": "0.1.0",
-  "description": "Self-evolving schema runtime plugin for local LLM workflows.",
+  "description": "Self-evolving schema runtime plugin for structured profiling, prior-work continuation, and change inspection in local LLM workflows.",
   "author": {
     "name": "kawayuta",
     "email": "addkawayuta@gmail.com",
@@ -36,9 +36,9 @@
     "privacyPolicyURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
     "termsOfServiceURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
     "defaultPrompt": [
-      "Continue earlier work on the same subject and reuse prior memory before searching again",
-      "Structure this subject, fill missing fields, and keep the lineage visible",
-      "Explain what changed in the latest run and why it retried or evolved"
+      "Use continue_prior_work when the user wants to keep going on the same subject and reuse prior memory",
+      "Use structure_subject when the user wants a subject profiled, organized, or mapped into structured fields",
+      "Use inspect_latest_changes when the user asks what changed, why it retried, or why the schema evolved"
     ],
     "brandColor": "#1F5EFF",
     "composerIcon": "./assets/tracerelay-icon.svg",
