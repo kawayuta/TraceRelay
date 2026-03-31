@@ -8,9 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_cli_module_help_mentions_slg() -> None:
+def test_cli_module_help_mentions_trr() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "schemaledger.cli", "--help"],
+        [sys.executable, "-m", "tracerelay.cli", "--help"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -18,14 +18,14 @@ def test_cli_module_help_mentions_slg() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "SchemaLedger CLI." in result.stdout
-    assert "slg" in result.stdout
+    assert "TraceRelay CLI." in result.stdout
+    assert "trr" in result.stdout
 
 
-def test_docker_scripts_use_slg_short_name() -> None:
+def test_docker_scripts_use_trr_short_name() -> None:
     web_script = (ROOT / "scripts" / "docker_start_web.sh").read_text(encoding="utf-8")
     mcp_script = (ROOT / "scripts" / "docker_start_mcp.sh").read_text(encoding="utf-8")
-    assert "slg db apply-schema" in web_script
-    assert "slg web serve" in web_script
-    assert "slg db apply-schema" in mcp_script
-    assert "slg mcp serve" in mcp_script
+    assert "trr db apply-schema" in web_script
+    assert "trr web serve" in web_script
+    assert "trr db apply-schema" in mcp_script
+    assert "trr mcp serve" in mcp_script

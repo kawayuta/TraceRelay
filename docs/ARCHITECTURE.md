@@ -1,13 +1,13 @@
 # Architecture
 
-This document explains the runtime, persistence model, and surface area of SchemaLedger in a form suitable for public documentation.
+This document explains the runtime, persistence model, and surface area of TraceRelay in a form suitable for public documentation.
 
 ## System Context
 
 ```mermaid
 flowchart LR
     User[User Prompt] --> LM[LM Studio]
-    LM --> Runtime[SchemaLedger Task Runtime]
+    LM --> Runtime[TraceRelay Task Runtime]
     Runtime --> JSONL[JSONL Artifact Store]
     JSONL --> PG[PostgreSQL Projection]
     PG --> Web[Flask Web UI and API]
@@ -103,7 +103,7 @@ This means the final output is never detached from the reasoning path that produ
 
 ## Memory Model
 
-SchemaLedger's memory system is not generic chat memory. It is task-native memory.
+TraceRelay's memory system is not generic chat memory. It is task-native memory.
 
 ### Memory types
 

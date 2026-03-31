@@ -1,10 +1,36 @@
 from __future__ import annotations
 
-from schemaledger.indexer.loader import TaskRuntimeProjector
-from schemaledger.models import TaskSpec
-from schemaledger.task_flow import JsonlArtifactStore
-from schemaledger.task_runtime import TaskRuntime
-from schemaledger.web.repository import PostgresTaskRepository, TaskRepository
+from tracerelay.indexer.loader import TaskRuntimeProjector
+from tracerelay.models import TaskSpec
+from tracerelay.task_flow import JsonlArtifactStore
+from tracerelay.task_runtime import TaskRuntime
+from tracerelay.web.repository import PostgresTaskRepository, TaskRepository
+
+
+class _RecordingCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def execute(self, sql, params=()):  # noqa: ANN001
+        self.calls.append((str(sql), tuple(params)))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return None
+
+
+class _RecordingConnection:
+    def __init__(self) -> None:
+        self.cursor_instance = _RecordingCursor()
+        self.commits = 0
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self) -> None:
+        self.commits += 1
 
 
 def _run_two_tasks(fake_llm, tmp_path):
@@ -63,6 +89,18 @@ def test_memory_projection_and_jsonl_repository_support_lookup(fake_llm, tmp_pat
     assert subject_bundle["task_memory_contexts"]
     assert subject_bundle["profiles"]
     assert subject_bundle["profiles"][0]["profile_key"] == "default"
+
+
+def test_projector_apply_schema_uses_advisory_lock(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    projector = TaskRuntimeProjector(store)
+    connection = _RecordingConnection()
+
+    projector.apply_schema(connection)
+
+    assert connection.commits == 1
+    assert connection.cursor_instance.calls[0] == ("SELECT pg_advisory_xact_lock(%s, %s)", (48251, 3003))
+    assert "CREATE TABLE IF NOT EXISTS task_artifact" in connection.cursor_instance.calls[1][0]
 
 
 def test_postgres_memory_queries_are_readable_from_projection_rows():

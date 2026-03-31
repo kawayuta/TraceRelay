@@ -1,6 +1,6 @@
 <svg width="1180" height="720" viewBox="0 0 1180 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">SchemaLedger benchmark snapshot</title>
-  <desc id="desc">Grouped bar chart comparing SchemaLedger, Claude Code, and Codex across Task Success, Query Quality, Claim Support, Token Efficiency, and Long-Task Recall.</desc>
+  <title id="title">TraceRelay benchmark snapshot</title>
+  <desc id="desc">Grouped bar chart comparing TraceRelay, Claude Code, and Codex across Task Success, Query Quality, Claim Support, Token Efficiency, and Long-Task Recall.</desc>
   <style>
     .bg { fill: #f8fafc; }
     .panel { fill: white; stroke: #e2e8f0; stroke-width: 1.5; }
@@ -21,7 +21,7 @@
   <text class="subtitle" x="64" y="102">Normalized product comparison across core evaluation dimensions</text>
 
   <rect x="64" y="124" width="14" height="14" rx="3" fill="#2563EB"/>
-  <text class="legend" x="86" y="136">SchemaLedger</text>
+  <text class="legend" x="86" y="136">TraceRelay</text>
   <rect x="228" y="124" width="14" height="14" rx="3" fill="#7C3AED"/>
   <text class="legend" x="250" y="136">Claude Code</text>
   <rect x="394" y="124" width="14" height="14" rx="3" fill="#F59E0B"/>

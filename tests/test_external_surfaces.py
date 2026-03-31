@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
 
-from schemaledger.config import DEFAULT_POSTGRES_DSN
-from schemaledger.indexer.loader import TaskRuntimeProjector
-from schemaledger.llm import (
+from tracerelay.config import DEFAULT_POSTGRES_DSN
+from tracerelay.indexer.loader import TaskRuntimeProjector
+from tracerelay.llm import (
     GeminiClient,
     GeminiConfig,
     GeminiStructuredLLM,
@@ -25,13 +25,13 @@ from schemaledger.llm import (
     _task_extraction_schema,
     llm_from_env,
 )
-from schemaledger.mcp.server import LocalMCPServer, create_mcp_server
-from schemaledger.models import ExtractionResult, SchemaVersion, TaskSpec
-from schemaledger.schema_store import ArtifactSchemaStore
-from schemaledger.task_flow import JsonlArtifactStore
-from schemaledger.task_runtime import TaskRuntime
-from schemaledger.web.app import create_app
-from schemaledger.web.repository import PostgresTaskRepository, TaskRepository
+from tracerelay.mcp.server import LocalMCPServer, create_mcp_server
+from tracerelay.models import ArtifactRecord, ExtractionResult, SchemaVersion, TaskSpec
+from tracerelay.schema_store import ArtifactSchemaStore
+from tracerelay.task_flow import JsonlArtifactStore
+from tracerelay.task_runtime import TaskRuntime
+from tracerelay.web.app import build_task_dashboard, create_app
+from tracerelay.web.repository import PostgresTaskRepository, TaskRepository
 
 
 class _FakeHTTPResponse:
@@ -384,13 +384,13 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "artifact_read",
         "artifact_search",
     }
-    assert "schemaledger://tasks" in {
+    assert "tracerelay://tasks" in {
         str(resource.uri) for resource in server.list_resources()
     }
-    assert "schemaledger://tasks/{task_id}" in {
+    assert "tracerelay://tasks/{task_id}" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
-    assert "schemaledger://tasks/{task_id}/trace" in {
+    assert "tracerelay://tasks/{task_id}/trace" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     assert {prompt.name for prompt in server.list_prompts()} >= {
@@ -399,16 +399,16 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "analyze_policy",
         "analyze_incident",
     }
-    assert server.read_resource("schemaledger://tasks")
+    assert server.read_resource("tracerelay://tasks")
     schema_status = server.call_tool("schema_status", {"task_id": google.task_id})
     assert schema_status["active_schema"]["version"] == 2
     task_trace_result = server.call_tool("task_trace", {"task_id": google.task_id})
     assert task_trace_result["summary"]["family"] == "organization"
     apply_result = server.call_tool("schema_apply", {"task_id": google.task_id})
     assert apply_result["applied"] is True
-    events = server.read_resource(f"schemaledger://tasks/{google.task_id}/events")
+    events = server.read_resource(f"tracerelay://tasks/{google.task_id}/events")
     assert any(event["kind"] == "schema_apply_confirmed" for event in events)
-    trace_resource = server.read_resource(f"schemaledger://tasks/{google.task_id}/trace")
+    trace_resource = server.read_resource(f"tracerelay://tasks/{google.task_id}/trace")
     assert trace_resource["summary"]["status"] == "success"
     search_results = server.call_tool("artifact_search", {"query": "Google"})
     assert search_results[0]["task_id"] == google.task_id
@@ -492,10 +492,10 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
         "subject_memory",
         "task_memory_context",
     }
-    assert "schemaledger://memory/profile" in {
+    assert "tracerelay://memory/profile" in {
         str(resource.uri) for resource in server.list_resources()
     }
-    assert "schemaledger://memory/search/{query}" in {
+    assert "tracerelay://memory/search/{query}" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     memory_search_result = server.call_tool("memory_search", {"query": "Google"})
@@ -507,13 +507,13 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert subject_memory_result["subject"] == "Google"
     task_memory_result = server.call_tool("task_memory_context", {"task_id": google.task_id})
     assert task_memory_result["task_id"] == google.task_id
-    assert server.read_resource("schemaledger://memory/profile")["profile_id"] == "workspace"
-    assert server.read_resource("schemaledger://memory/subjects/Google")["subject"] == "Google"
-    assert server.read_resource(f"schemaledger://memory/tasks/{google.task_id}")["task_id"] == google.task_id
+    assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"
+    assert server.read_resource("tracerelay://memory/subjects/Google")["subject"] == "Google"
+    assert server.read_resource(f"tracerelay://memory/tasks/{google.task_id}")["task_id"] == google.task_id
 
 
 def test_lm_studio_http_integration(tmp_path):
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_urlopen):
         client = LMStudioClient(
             LMStudioConfig(
                 base_url="http://127.0.0.1:1234",
@@ -533,7 +533,7 @@ def test_lm_studio_http_integration(tmp_path):
 
 
 def test_lm_studio_parses_fenced_json_response():
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_fenced_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_fenced_urlopen):
         client = LMStudioClient(
             LMStudioConfig(
                 base_url="http://127.0.0.1:1234",
@@ -549,7 +549,7 @@ def test_lm_studio_parses_fenced_json_response():
 
 
 def test_lm_studio_parses_reasoning_content_when_content_is_empty():
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_reasoning_content_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_reasoning_content_urlopen):
         client = LMStudioClient(
             LMStudioConfig(
                 base_url="http://127.0.0.1:1234",
@@ -565,7 +565,7 @@ def test_lm_studio_parses_reasoning_content_when_content_is_empty():
 
 
 def test_ollama_http_integration(tmp_path):
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_ollama_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_ollama_urlopen):
         client = OllamaClient(
             OllamaConfig(
                 base_url="http://127.0.0.1:11434",
@@ -585,7 +585,7 @@ def test_ollama_http_integration(tmp_path):
 
 
 def test_openai_http_integration(tmp_path):
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_openai_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_openai_urlopen):
         client = OpenAIClient(
             OpenAIConfig(
                 api_key="test-openai-key",
@@ -605,7 +605,7 @@ def test_openai_http_integration(tmp_path):
 
 
 def test_gemini_http_integration(tmp_path):
-    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_gemini_urlopen):
+    with patch("tracerelay.llm.request.urlopen", side_effect=_fake_gemini_urlopen):
         client = GeminiClient(
             GeminiConfig(
                 api_key="test-gemini-key",
@@ -628,9 +628,9 @@ def test_llm_from_env_selects_ollama_provider():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_LLM_PROVIDER": "ollama",
-            "SCHEMALEDGER_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
-            "SCHEMALEDGER_OLLAMA_MODEL": "qwen3",
+            "TRACERELAY_LLM_PROVIDER": "ollama",
+            "TRACERELAY_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "TRACERELAY_OLLAMA_MODEL": "qwen3",
         },
         clear=True,
     ):
@@ -643,9 +643,9 @@ def test_llm_from_env_selects_openai_provider():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_LLM_PROVIDER": "openai",
-            "SCHEMALEDGER_OPENAI_API_KEY": "test-openai-key",
-            "SCHEMALEDGER_OPENAI_MODEL": "gpt-4.1-mini",
+            "TRACERELAY_LLM_PROVIDER": "openai",
+            "TRACERELAY_OPENAI_API_KEY": "test-openai-key",
+            "TRACERELAY_OPENAI_MODEL": "gpt-4.1-mini",
         },
         clear=True,
     ):
@@ -658,9 +658,9 @@ def test_llm_from_env_selects_gemini_provider():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_LLM_PROVIDER": "gemini",
-            "SCHEMALEDGER_GEMINI_API_KEY": "test-gemini-key",
-            "SCHEMALEDGER_GEMINI_MODEL": "gemini-2.5-flash",
+            "TRACERELAY_LLM_PROVIDER": "gemini",
+            "TRACERELAY_GEMINI_API_KEY": "test-gemini-key",
+            "TRACERELAY_GEMINI_MODEL": "gemini-2.5-flash",
         },
         clear=True,
     ):
@@ -714,6 +714,9 @@ class _StubCursor:
 
     def execute(self, sql, params=()):  # noqa: ANN001
         if "FROM task_artifact" in sql:
+            if not params:
+                self.rows = self.summary_rows
+                return
             requested_task_id = params[0]
             artifact_type = params[1] if len(params) > 1 else None
             if requested_task_id != self.task_id:
@@ -787,6 +790,55 @@ def test_mcp_task_failure_is_persisted_and_browseable(tmp_path):
     assert trace["flowchart"]["nodes"][-1]["artifact_type"] == "task_run"
 
 
+def test_task_repository_and_dashboard_sort_tasks_by_latest_processed_at(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    store.append(
+        ArtifactRecord(
+            artifact_id="artifact-1",
+            task_id="task-older",
+            artifact_type="task_prompt",
+            payload={"prompt": "Older task", "locale": "en"},
+            recorded_at="2026-03-31T00:00:00.000000Z",
+        )
+    )
+    store.append(
+        ArtifactRecord(
+            artifact_id="artifact-2",
+            task_id="task-older",
+            artifact_type="task_run",
+            payload={"status": "success", "reason": "complete"},
+            recorded_at="2026-03-31T00:01:00.000000Z",
+        )
+    )
+    store.append(
+        ArtifactRecord(
+            artifact_id="artifact-3",
+            task_id="task-newer",
+            artifact_type="task_prompt",
+            payload={"prompt": "Newer task", "locale": "en"},
+            recorded_at="2026-04-01T00:00:00.000000Z",
+        )
+    )
+    store.append(
+        ArtifactRecord(
+            artifact_id="artifact-4",
+            task_id="task-newer",
+            artifact_type="task_run",
+            payload={"status": "failed", "reason": "runtime_exception"},
+            recorded_at="2026-04-01T00:02:00.000000Z",
+        )
+    )
+
+    repository = TaskRepository(store)
+
+    listed = repository.list_tasks()
+    dashboard = build_task_dashboard(repository)
+
+    assert [task["task_id"] for task in listed] == ["task-newer", "task-older"]
+    assert [task["task_id"] for task in dashboard["tasks"]] == ["task-newer", "task-older"]
+    assert listed[0]["latest_processed_at"] == "2026-04-01T00:02:00.000000Z"
+
+
 def test_postgres_repository_uses_exact_task_id_matching():
     task_id = "task-c40416e1314a432e89e58a531af26496"
     artifacts = [
@@ -802,7 +854,7 @@ def test_postgres_repository_uses_exact_task_id_matching():
         ("artifact-3", "task_run", {"status": "success", "reason": "complete"}),
     ]
     summary_rows = [
-        (task_id, "Google profile", "Google", "organization", "success", "complete"),
+        (task_id, "Google profile", "Google", "organization", "success", "complete", "2026-04-01 12:00:00+00"),
     ]
 
     repository = PostgresTaskRepository(
@@ -819,13 +871,25 @@ def test_postgres_repository_uses_exact_task_id_matching():
         raise AssertionError("expected KeyError for non-exact task_id")
 
 
+def test_postgres_repository_lists_most_recent_tasks_first():
+    summary_rows = [
+        ("task-newer", "Newer profile", "Google", "organization", "success", "complete", "2026-04-01 12:00:00+00"),
+        ("task-older", "Older profile", "ASPI", "organization", "partial", "reextract_required", "2026-03-31 12:00:00+00"),
+    ]
+    repository = PostgresTaskRepository(
+        connection_factory=lambda: _StubConnection("task-newer", [], summary_rows)
+    )
+
+    assert [task["task_id"] for task in repository.list_tasks()] == ["task-newer", "task-older"]
+
+
 def test_postgres_repository_uses_default_dsn():
     repository = PostgresTaskRepository(connection_factory=lambda: _StubConnection("", [], []))
     assert repository.dsn == DEFAULT_POSTGRES_DSN
 
 
 def test_generated_ids_are_prefixed_and_unique():
-    from schemaledger.evolution.ids import next_id
+    from tracerelay.evolution.ids import next_id
 
     ids = {next_id("task") for _ in range(64)}
     assert len(ids) == 64

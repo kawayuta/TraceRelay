@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "schemaledger",
+      "name": "tracerelay",
       "source": {
         "source": "local",
-        "path": "./plugins/schemaledger"
+        "path": "./plugins/tracerelay"
       },
       "policy": {
         "installation": "AVAILABLE",

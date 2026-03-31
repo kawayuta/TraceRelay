@@ -1,7 +1,7 @@
 import pytest
 
-from schemaledger.models import TaskSpec
-from schemaledger.prompt_interpretation import PromptInterpreter
+from tracerelay.models import TaskSpec
+from tracerelay.prompt_interpretation import PromptInterpreter
 
 
 @pytest.mark.parametrize(

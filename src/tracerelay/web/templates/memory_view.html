@@ -1,0 +1,196 @@
+{% extends "layout.html" %}
+{% from "_ui_macros.html" import render_code_panel, render_lines %}
+
+{% macro render_row(card) %}
+  <a class="memory-row" href="{{ card.href }}">
+    <div class="memory-row-main">
+      <div class="memory-row-title">{{ card.title }}</div>
+      {% if card.subtitle %}
+        <div class="memory-row-subtitle text-clamp text-clamp-2">{{ card.subtitle }}</div>
+      {% endif %}
+      {% if card.snippets %}
+        <ul class="compact-list compact-list-tight top-gap-sm">
+          {% for snippet in card.snippets[:2] %}
+            <li>{{ snippet }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    <div class="memory-row-meta">
+      {% if card.score is not none %}
+        <div class="memory-score">score {{ "%.3f"|format(card.score) }}</div>
+      {% endif %}
+      {% if card.chips %}
+        <div class="chip-list">
+          {% for chip in card.chips %}
+            <span class="table-chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </a>
+{% endmacro %}
+
+{% block title %}{{ memory.title }}{% endblock %}
+{% block page_kicker %}<div class="page-kicker">Memory</div>{% endblock %}
+{% block page_breadcrumbs %}
+  <a href="/tasks">Runtime</a>
+  <span>/</span>
+  <span>Memory Browser</span>
+{% endblock %}
+{% block page_title %}{{ memory.title }}{% endblock %}
+{% block page_intro %}Scope recall by workspace, profile, subject, or task with pane-based navigation and explicit provenance instead of one noisy global memory pool.{% endblock %}
+
+{% block content %}
+  <div class="memory-layout-grid" data-resizable-group data-resizable-key="tracerelay.layout.memory">
+    <aside class="surface memory-scope-pane">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Scopes</div>
+          <h2>Memory panes</h2>
+        </div>
+      </div>
+
+      <nav class="scope-nav">
+        <a class="scope-link {% if memory.kind == 'profile' and memory.profile_id == 'workspace' %}is-active{% endif %}" href="/memory">Workspace</a>
+        {% if memory.kind == 'profile' and memory.profile_id != 'workspace' %}
+          <a class="scope-link is-active" href="/memory/profile/{{ memory.profile_id }}">Profile</a>
+        {% else %}
+          <a class="scope-link" href="/memory/profile/default">Profile</a>
+        {% endif %}
+        {% if memory.kind == 'subject' %}
+          <a class="scope-link is-active" href="/memory/subjects/{{ memory.subject|urlencode }}">{{ memory.subject }}</a>
+        {% else %}
+          <span class="scope-link is-muted">Subject</span>
+        {% endif %}
+        {% if memory.kind == 'task' %}
+          <a class="scope-link is-active" href="/memory/tasks/{{ memory.task_id }}">{{ memory.task_id[:12] }}…</a>
+        {% else %}
+          <span class="scope-link is-muted">Task</span>
+        {% endif %}
+        {% if memory.task_trace_url %}
+          <a class="scope-link" href="{{ memory.task_trace_url }}">Trace</a>
+        {% endif %}
+      </nav>
+
+      <section class="inspector-card top-gap">
+        <div class="section-kicker">Scope Snapshot</div>
+        <div class="summary-list">
+          {% for stat in memory.stats %}
+            <div class="summary-list-row">
+              <span>{{ stat.label }}</span>
+              <strong>{{ stat.value }}</strong>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    </aside>
+
+    <div
+      class="pane-resizer pane-resizer-memory-primary"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize memory scope pane"
+      tabindex="0"
+      data-resize-handle
+      data-resize-var="--memory-scope-width"
+      data-resize-side="left"
+      data-resize-min="220"
+      data-resize-max="420"
+    ></div>
+
+    <section class="surface memory-list-pane">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Search</div>
+          <h2>Search recall</h2>
+          <p>Search first, then open the narrowest scope that still preserves provenance.</p>
+        </div>
+      </div>
+      <form class="filter-grid filter-grid-search" action="/memory/search" method="get">
+        <label class="field-stack field-span-2">
+          <span>Query</span>
+          <input type="search" name="q" placeholder="Search prior tasks, subjects, or learned facts" value="{{ memory.search_query or '' }}">
+        </label>
+        <button class="primary-button" type="submit">Search</button>
+      </form>
+
+      <div class="memory-blocks top-gap">
+        {% for block in memory.blocks %}
+          <section class="subsurface memory-block">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker">Memory Block</div>
+                <h2>{{ block.title }}</h2>
+                {% if block.description %}
+                  <p>{{ block.description }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if block.lines %}
+              {{ render_lines(block.lines, "compact-list") }}
+            {% endif %}
+
+            {% if block.chips %}
+              <div class="chip-list top-gap-sm">
+                {% for chip in block.chips %}
+                  <span class="table-chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+
+            {% if block.cards %}
+              <div class="memory-row-list top-gap">
+                {% for card in block.cards %}
+                  {{ render_row(card) }}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </section>
+        {% endfor %}
+      </div>
+    </section>
+
+    <div
+      class="pane-resizer pane-resizer-memory-secondary"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize memory detail pane"
+      tabindex="0"
+      data-resize-handle
+      data-resize-var="--memory-detail-width"
+      data-resize-side="right"
+      data-resize-min="260"
+      data-resize-max="520"
+    ></div>
+
+    <aside class="surface memory-detail-pane">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Inspector</div>
+          <h2>How to read this scope</h2>
+        </div>
+      </div>
+      <div class="summary-list">
+        <div class="summary-list-row"><span>Current view</span><strong>{{ memory.kind }}</strong></div>
+        <div class="summary-list-row"><span>Search query</span><strong>{{ memory.search_query or "none" }}</strong></div>
+        <div class="summary-list-row"><span>Trace link</span><strong>{% if memory.task_trace_url %}available{% else %}n/a{% endif %}</strong></div>
+      </div>
+      <div class="top-gap">
+        {{ render_code_panel("Scope reading rule", "1. Choose scope first.\n2. Read the block summary.\n3. Open only the row that matters.\n4. Compare memory against trace when trust is low.") }}
+      </div>
+      {% if memory.recall_context %}
+        <div class="top-gap">
+          {{ render_code_panel("Recall context", memory.recall_context) }}
+        </div>
+      {% endif %}
+      {% if memory.learned_facts %}
+        <section class="inspector-card top-gap">
+          <div class="section-kicker">Fast Facts</div>
+          {{ render_lines(memory.learned_facts[:6], "compact-list compact-list-tight") }}
+        </section>
+      {% endif %}
+    </aside>
+  </div>
+{% endblock %}

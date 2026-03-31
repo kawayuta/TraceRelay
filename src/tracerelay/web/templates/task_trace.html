@@ -1,0 +1,387 @@
+{% extends "layout.html" %}
+{% from "_ui_macros.html" import render_code_panel, render_lines %}
+
+{% macro render_tree(node, level=0) %}
+  <div class="tree-node level-{{ level }}">
+    <details class="tree-branch" {% if level == 0 %}open{% endif %}>
+      <summary class="tree-summary">
+        <span class="tree-summary-main">
+          <span class="tree-bullet"></span>
+          <span class="tree-title">{{ node.title }}</span>
+        </span>
+        {% if node.lines %}
+          <span class="tree-badge">{{ node.lines|length }} notes</span>
+        {% endif %}
+      </summary>
+      {% if node.lines %}
+        <div class="tree-body">
+          {{ render_lines(node.lines, "compact-list compact-list-tight") }}
+        </div>
+      {% endif %}
+      {% if node.children %}
+        <div class="tree-children">
+          {% for child in node.children %}
+            {{ render_tree(child, level + 1) }}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </details>
+  </div>
+{% endmacro %}
+
+{% block title %}{{ trace.summary.resolved_subject or trace.task_id }}{% endblock %}
+{% block page_kicker %}<div class="page-kicker">Trace Detail</div>{% endblock %}
+{% block page_breadcrumbs %}
+  <a href="/tasks">Runtime</a>
+  <span>/</span>
+  <a href="/tasks">Task Queue</a>
+  <span>/</span>
+  <span>{{ trace.summary.resolved_subject or trace.task_id }}</span>
+{% endblock %}
+{% block page_title %}{{ trace.summary.resolved_subject or trace.task_id }}{% endblock %}
+{% block page_intro %}Console-style trace: branch diagnosis on the left, operational workbench in the center, schema and memory evidence in the right pane.{% endblock %}
+
+{% block content %}
+  <div class="trace-console" data-resizable-group data-resizable-key="tracerelay.layout.trace">
+    <aside class="surface trace-sidebar">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Run Inspector</div>
+          <h2>{{ trace.summary.resolved_subject or trace.task_id }}</h2>
+          <p class="text-clamp text-clamp-6">{{ trace.summary.prompt }}</p>
+          <details class="text-disclosure top-gap-sm">
+            <summary>Open full prompt</summary>
+            <p class="top-gap-sm">{{ trace.summary.prompt }}</p>
+          </details>
+        </div>
+      </div>
+
+      <div class="inspector-stack">
+        <section class="inspector-card">
+          <div class="trace-badge-row">
+            <span class="status-pill status-{{ trace.summary.status or 'warning' }}">{{ trace.summary.status or "unknown" }}</span>
+            <span class="table-chip">{{ trace.summary.family or "n/a" }}</span>
+            <span class="table-chip">{{ trace.summary.reason or "n/a" }}</span>
+          </div>
+          <div class="summary-list top-gap-sm">
+            <div class="summary-list-row"><span>Task ID</span><strong>{{ trace.task_id }}</strong></div>
+            <div class="summary-list-row"><span>Attempts</span><strong>{{ trace.summary.attempts or 0 }}</strong></div>
+            <div class="summary-list-row"><span>Schema rounds</span><strong>{{ trace.summary.schema_rounds or 0 }}</strong></div>
+            <div class="summary-list-row"><span>Schema versions</span><strong>{{ trace.schema_lineage|length }}</strong></div>
+          </div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="section-kicker">What Matters Now</div>
+          <div class="trace-panel-grid trace-panel-grid-compact">
+            {% for item in operator_view.top_cards %}
+              <article class="trace-panel trace-panel-{{ item.tone }}">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+                <p>{{ item.note }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="inspector-card">
+          <div class="section-kicker">Branch Summary</div>
+          <div class="chip-list">
+            {% for item in operator_view.why_it_branched %}
+              <span class="table-chip"><strong>{{ item.label }}</strong> {{ item.value }}</span>
+            {% endfor %}
+          </div>
+        </section>
+
+        {% if memory_panel %}
+          <section class="inspector-card">
+            <div class="section-kicker">Memory Scope</div>
+            <div class="summary-list">
+              <div class="summary-list-row"><span>Profile</span><strong>{{ memory_panel.profile_key or "workspace" }}</strong></div>
+              <div class="summary-list-row"><span>Subject</span><strong>{{ memory_panel.subject_key or "n/a" }}</strong></div>
+              <div class="summary-list-row"><span>Intent</span><strong>{{ memory_panel.intent or "n/a" }}</strong></div>
+              <div class="summary-list-row"><span>Shape</span><strong>{{ memory_panel.task_shape or "n/a" }}</strong></div>
+            </div>
+          </section>
+        {% endif %}
+      </div>
+    </aside>
+
+    <div
+      class="pane-resizer pane-resizer-trace-primary"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize trace inspector pane"
+      tabindex="0"
+      data-resize-handle
+      data-resize-var="--trace-sidebar-width"
+      data-resize-side="left"
+      data-resize-min="240"
+      data-resize-max="520"
+    ></div>
+
+    <section class="surface trace-primary-pane">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Workbench</div>
+          <h2>Execution workbench</h2>
+          <p>Review attempts, inspect the execution tree, and audit the ledger from one workbench.</p>
+        </div>
+      </div>
+
+      <nav class="pane-tabs" aria-label="Trace workbench">
+        <button class="pane-tab is-active" type="button" data-pane-group="trace-main" data-pane-tab="attempts">Attempts</button>
+        <button class="pane-tab" type="button" data-pane-group="trace-main" data-pane-tab="tree">Execution Tree</button>
+        <button class="pane-tab" type="button" data-pane-group="trace-main" data-pane-tab="artifacts">Artifacts</button>
+      </nav>
+
+      <div class="pane-stack">
+        <section class="pane-panel is-active" data-pane-group="trace-main" data-pane-panel="attempts">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">Attempt Comparison</div>
+              <h2>What changed across attempts</h2>
+            </div>
+          </div>
+          {% if operator_view.attempts %}
+            <div class="table-shell table-shell-tall">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    <th>Attempt</th>
+                    <th>Status</th>
+                    <th>Schema</th>
+                    <th>Issue</th>
+                    <th>Missing</th>
+                    <th>Returned</th>
+                    <th>Next</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for attempt in operator_view.attempts %}
+                    <tr
+                      data-attempt-row
+                      data-attempt-label="#{{ attempt.attempt }}"
+                      data-attempt-status="{{ attempt.status }}"
+                      data-attempt-schema="v{{ attempt.schema_version or 'n/a' }}"
+                      data-attempt-issue="{{ attempt.missing_preview }}"
+                      data-attempt-next="{{ attempt.next_action }}"
+                      data-attempt-reason="{{ attempt.reason }}"
+                      data-attempt-payload-code="{{ attempt.payload_code }}"
+                      data-attempt-coverage-code="{{ attempt.coverage_code }}"
+                      {% if loop.last %}data-attempt-default="true"{% endif %}
+                    >
+                      <td class="table-primary">#{{ attempt.attempt }}</td>
+                      <td><span class="status-pill status-{{ attempt.status if attempt.status in ['success', 'failed', 'partial'] else 'warning' }}">{{ attempt.status }}</span></td>
+                      <td>v{{ attempt.schema_version or "n/a" }}</td>
+                      <td><span class="lane-chip lane-{{ 'schema' if attempt.dominant_issue == 'schema' else 'retry' if attempt.dominant_issue == 'values' else 'neutral' }}">{{ attempt.dominant_issue }}</span></td>
+                      <td>
+                        {% if attempt.missing_values %}
+                          <div class="text-clamp text-clamp-2">{{ attempt.missing_values|join(", ") }}</div>
+                        {% elif attempt.missing_fields %}
+                          <div class="text-clamp text-clamp-2">{{ attempt.missing_fields|join(", ") }}</div>
+                        {% elif attempt.missing_relations %}
+                          <div class="text-clamp text-clamp-2">{{ attempt.missing_relations|join(", ") }}</div>
+                        {% else %}
+                          <span class="table-subtle">none</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="table-primary">{{ attempt.returned_keys }}</div>
+                        {% if attempt.key_preview %}
+                          <div class="table-subtle text-clamp text-clamp-1">{{ attempt.key_preview|join(", ") }}</div>
+                        {% endif %}
+                      </td>
+                      <td><span class="table-chip">{{ attempt.next_action }}</span></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty-state">No extraction attempts were recorded for this run.</div>
+          {% endif %}
+        </section>
+
+        <section class="pane-panel" data-pane-group="trace-main" data-pane-panel="tree">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">Decision Trace</div>
+              <h2>Execution tree</h2>
+            </div>
+            <div class="header-actions">
+              <button class="ghost-button" type="button" data-tree-expand>Expand all</button>
+              <button class="ghost-button" type="button" data-tree-collapse>Collapse all</button>
+            </div>
+          </div>
+          <div class="tree-root" data-tree-root>
+            {{ render_tree(trace.decision_tree) }}
+          </div>
+        </section>
+
+        <section class="pane-panel" data-pane-group="trace-main" data-pane-panel="artifacts">
+          <div class="section-header">
+            <div>
+              <div class="section-kicker">Raw Audit Trail</div>
+              <h2>Artifact Ledger</h2>
+            </div>
+          </div>
+          <div class="table-shell table-shell-tall">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>Artifact</th>
+                  <th>Lane</th>
+                  <th>Summary</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for node in trace.flowchart.nodes %}
+                  <tr>
+                    <td class="table-subtle">{{ loop.index }}</td>
+                    <td>
+                      <div class="table-primary">{{ node.title }}</div>
+                      <div class="table-subtle">{{ node.artifact_type }}</div>
+                    </td>
+                    <td><span class="lane-chip lane-{{ node.lane }}">{{ node.lane }}</span></td>
+                    <td><div class="text-clamp text-clamp-2">{{ node.subtitle or "n/a" }}</div></td>
+                    <td>
+                      {% if node.details %}
+                        <ul class="compact-list compact-list-tight">
+                          {% for line in node.details[:2] %}
+                            <li>{{ line }}</li>
+                          {% endfor %}
+                        </ul>
+                        {% if node.details|length > 2 %}
+                          <details class="text-disclosure">
+                            <summary>Show all details</summary>
+                            {{ render_lines(node.details, "compact-list compact-list-tight") }}
+                          </details>
+                        {% endif %}
+                      {% else %}
+                        <span class="table-subtle">n/a</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <div
+      class="pane-resizer pane-resizer-trace-secondary"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize trace evidence pane"
+      tabindex="0"
+      data-resize-handle
+      data-resize-var="--trace-evidence-width"
+      data-resize-side="right"
+      data-resize-min="320"
+      data-resize-max="620"
+    ></div>
+
+    <aside class="surface trace-secondary-pane">
+      <div class="section-header">
+        <div>
+          <div class="section-kicker">Evidence Pane</div>
+          <h2>Schema, payload, memory</h2>
+          <p>Keep schema, payload, and recalled memory visible as code-shaped evidence.</p>
+        </div>
+      </div>
+
+      <nav class="pane-tabs" aria-label="Evidence panes">
+        <button class="pane-tab is-active" type="button" data-pane-group="trace-evidence" data-pane-tab="payload">Payload</button>
+        <button class="pane-tab" type="button" data-pane-group="trace-evidence" data-pane-tab="schema">Schema</button>
+        <button class="pane-tab" type="button" data-pane-group="trace-evidence" data-pane-tab="memory">Memory</button>
+      </nav>
+
+      <div class="pane-stack">
+        <section class="pane-panel is-active" data-pane-group="trace-evidence" data-pane-panel="payload">
+          <div class="inspector-card attempt-inspector-card">
+            <div class="trace-badge-row">
+              <span class="status-pill status-warning" data-attempt-inspector-status>unknown</span>
+              <span class="table-chip" data-attempt-inspector-schema>v n/a</span>
+            </div>
+            <div class="summary-list top-gap-sm">
+              <div class="summary-list-row"><span>Attempt</span><strong data-attempt-inspector-label>n/a</strong></div>
+              <div class="summary-list-row"><span>Issue</span><strong data-attempt-inspector-issue>n/a</strong></div>
+              <div class="summary-list-row"><span>Next</span><strong data-attempt-inspector-next>n/a</strong></div>
+              <div class="summary-list-row"><span>Run reason</span><strong data-attempt-inspector-reason>n/a</strong></div>
+            </div>
+          </div>
+          <div class="code-stack top-gap">
+            <div class="code-panel">
+              <div class="code-panel-header">Latest extraction payload</div>
+              <div class="code-view">
+                <ol class="code-lines" data-attempt-inspector-payload>
+                  <li><code>{}</code></li>
+                </ol>
+              </div>
+            </div>
+            <div class="code-panel">
+              <div class="code-panel-header">Coverage snapshot</div>
+              <div class="code-view">
+                <ol class="code-lines" data-attempt-inspector-coverage>
+                  <li><code>{}</code></li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="pane-panel" data-pane-group="trace-evidence" data-pane-panel="schema">
+          {{ render_code_panel("Active schema", operator_view.active_schema_code) }}
+          <div class="top-gap">
+            {% for schema in operator_view.schema_versions %}
+              {{ render_code_panel("Schema code", schema.code, disclosure_label="Schema v" ~ schema.version ~ " · " ~ (schema.family or "n/a"), open=loop.last) }}
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="pane-panel" data-pane-group="trace-evidence" data-pane-panel="memory">
+          {% if memory_panel %}
+            <section class="inspector-card">
+              <div class="section-kicker">Used In Run</div>
+              {% if memory_panel.facts %}
+                {{ render_lines(memory_panel.facts, "compact-list") }}
+              {% else %}
+                <div class="empty-state">No recalled facts were recorded for this run.</div>
+              {% endif %}
+            </section>
+            <div class="top-gap">
+              {{ render_code_panel("Task memory context", memory_panel.context_code) }}
+            </div>
+            <section class="inspector-card top-gap">
+              <div class="section-kicker">Available Subject Memory</div>
+              {% if memory_panel.evidence %}
+                <div class="memory-row-list top-gap-sm">
+                  {% for item in memory_panel.evidence %}
+                    <a class="memory-row" href="{{ item.href }}">
+                      <div class="memory-row-main">
+                        <div class="memory-row-title">{{ item.task_id[:12] }}…</div>
+                        <div class="memory-row-subtitle text-clamp text-clamp-2">{{ item.summary }}</div>
+                      </div>
+                      <div class="memory-row-meta">
+                        <span class="table-chip"><strong>type</strong> {{ item.memory_type }}</span>
+                      </div>
+                    </a>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="empty-state top-gap-sm">No other subject memory documents are available.</div>
+              {% endif %}
+            </section>
+          {% else %}
+            <div class="empty-state">No task memory context is available for this run.</div>
+          {% endif %}
+        </section>
+      </div>
+    </aside>
+  </div>
+{% endblock %}

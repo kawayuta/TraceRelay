@@ -1,0 +1,51 @@
+{
+  "name": "tracerelay",
+  "version": "0.1.0",
+  "description": "Self-evolving schema runtime plugin for local LLM workflows.",
+  "author": {
+    "name": "kawayuta",
+    "email": "addkawayuta@gmail.com",
+    "url": "https://github.com/kawayuta"
+  },
+  "homepage": "https://github.com/kawayuta/TraceRelay",
+  "repository": "https://github.com/kawayuta/TraceRelay",
+  "license": "MIT",
+  "keywords": [
+    "tracerelay",
+    "schema-evolution",
+    "mcp",
+    "lm-studio",
+    "postgresql",
+    "memory",
+    "extraction"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "TraceRelay",
+    "shortDescription": "Task-first schema evolution, memory recall, and lineage tracing for local LLM workflows",
+    "longDescription": "Run TraceRelay inside Codex as a repo-local plugin. The plugin connects to the running docker-compose MCP server, exposes task evolution and memory tools, and keeps schema lineage inspectable across Web, MCP, and the database.",
+    "developerName": "kawayuta",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/kawayuta/TraceRelay",
+    "privacyPolicyURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
+    "termsOfServiceURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
+    "defaultPrompt": [
+      "Continue earlier work on the same subject and reuse prior memory before searching again",
+      "Structure this subject, fill missing fields, and keep the lineage visible",
+      "Explain what changed in the latest run and why it retried or evolved"
+    ],
+    "brandColor": "#1F5EFF",
+    "composerIcon": "./assets/tracerelay-icon.svg",
+    "logo": "./assets/tracerelay-icon.svg",
+    "screenshots": [
+      "./assets/tasks-page.png",
+      "./assets/google-trace-page.png"
+    ]
+  }
+}

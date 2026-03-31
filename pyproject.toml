@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "schemaledger"
+name = "tracerelay"
 version = "0.1.0"
 description = "Task-first, self-evolving schema runtime for local LLM workflows"
 requires-python = ">=3.11"
@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-slg = "slg_cli:main"
-schemaledger-mcp = "schemaledger.mcp.server:main"
+trr = "trr_cli:main"
+tracerelay-mcp = "tracerelay.mcp.server:main"
 
 [dependency-groups]
 dev = [

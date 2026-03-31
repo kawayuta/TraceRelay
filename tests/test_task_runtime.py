@@ -1,7 +1,7 @@
 import pytest
 
-from schemaledger.models import TaskSpec
-from schemaledger.task_runtime import TaskRuntime
+from tracerelay.models import TaskSpec
+from tracerelay.task_runtime import TaskRuntime
 
 
 def test_runtime_requires_llm():

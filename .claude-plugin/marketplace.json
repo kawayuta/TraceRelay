@@ -1,18 +1,18 @@
 {
-  "name": "schemaledger-local",
+  "name": "tracerelay-local",
   "metadata": {
-    "description": "Local marketplace for the SchemaLedger Claude Code plugin."
+    "description": "Local marketplace for the TraceRelay Claude Code plugin."
   },
   "owner": {
-    "name": "SchemaLedger"
+    "name": "TraceRelay"
   },
   "plugins": [
     {
-      "name": "schemaledger",
+      "name": "tracerelay",
       "description": "Task-first, self-evolving schema runtime with traceable MCP tools, memory recall, and PostgreSQL-backed inspection.",
-      "source": "./plugins/schemaledger",
+      "source": "./plugins/tracerelay",
       "category": "development",
-      "homepage": "https://github.com/kawa/SchemaLedger"
+      "homepage": "https://github.com/kawa/TraceRelay"
     }
   ]
 }

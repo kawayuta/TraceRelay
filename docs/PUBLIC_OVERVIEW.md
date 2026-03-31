@@ -1,6 +1,6 @@
 # Public Overview
 
-SchemaLedger is a local-first runtime for structured research and schema evolution.
+TraceRelay is a local-first runtime for structured research and schema evolution.
 
 It does not treat extraction as a one-shot prompt. Instead, it treats every request as a task that can:
 
@@ -17,7 +17,7 @@ It does not treat extraction as a one-shot prompt. Instead, it treats every requ
 
 Most structured extraction systems assume the schema is already known.
 
-SchemaLedger is built for the harder case:
+TraceRelay is built for the harder case:
 
 - the user asks for new structure mid-task,
 - the LLM discovers new fields or relations are needed,

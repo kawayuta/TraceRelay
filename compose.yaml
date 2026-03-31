@@ -1,33 +1,35 @@
+name: tracerelay
+
 services:
   postgres:
     image: postgres:16
-    container_name: schemaledger-postgres-live
+    container_name: tracerelay-postgres-live
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: schemaledger_fresh
+      POSTGRES_DB: tracerelay_fresh
     ports:
       - "55432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d schemaledger_fresh"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tracerelay_fresh"]
       interval: 5s
       timeout: 3s
       retries: 20
     volumes:
-      - schemaledger_postgres_data:/var/lib/postgresql/data
+      - tracerelay_postgres_data:/var/lib/postgresql/data
   web:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: schemaledger-web
+    container_name: tracerelay-web
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      SCHEMALEDGER_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/schemaledger_fresh
-      SCHEMALEDGER_WORKSPACE: /app/workspace
-      SCHEMALEDGER_WEB_HOST: 0.0.0.0
-      SCHEMALEDGER_WEB_PORT: "5080"
+      TRACERELAY_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/tracerelay_fresh
+      TRACERELAY_WORKSPACE: /app/workspace
+      TRACERELAY_WEB_HOST: 0.0.0.0
+      TRACERELAY_WEB_PORT: "5080"
     ports:
       - "5080:5080"
     volumes:
@@ -36,35 +38,35 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: schemaledger-mcp
+    container_name: tracerelay-mcp
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      SCHEMALEDGER_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/schemaledger_fresh
-      SCHEMALEDGER_WORKSPACE: /app/workspace
-      SCHEMALEDGER_MCP_HOST: 0.0.0.0
-      SCHEMALEDGER_MCP_PORT: "5063"
-      SCHEMALEDGER_MCP_TRANSPORT: sse
-      SCHEMALEDGER_LLM_PROVIDER: ${SCHEMALEDGER_LLM_PROVIDER:-lmstudio}
-      SCHEMALEDGER_EMBEDDING_PROVIDER: ${SCHEMALEDGER_EMBEDDING_PROVIDER:-}
-      SCHEMALEDGER_LM_STUDIO_BASE_URL: ${SCHEMALEDGER_LM_STUDIO_BASE_URL:-http://host.docker.internal:1234}
-      SCHEMALEDGER_LM_STUDIO_MODEL: ${SCHEMALEDGER_LM_STUDIO_MODEL:-qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine}
-      SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL: ${SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
-      SCHEMALEDGER_OLLAMA_BASE_URL: ${SCHEMALEDGER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      SCHEMALEDGER_OLLAMA_MODEL: ${SCHEMALEDGER_OLLAMA_MODEL:-}
-      SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL: ${SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL:-}
-      SCHEMALEDGER_OLLAMA_TIMEOUT: ${SCHEMALEDGER_OLLAMA_TIMEOUT:-30}
-      SCHEMALEDGER_OPENAI_BASE_URL: ${SCHEMALEDGER_OPENAI_BASE_URL:-https://api.openai.com}
-      SCHEMALEDGER_OPENAI_API_KEY: ${SCHEMALEDGER_OPENAI_API_KEY:-}
-      SCHEMALEDGER_OPENAI_MODEL: ${SCHEMALEDGER_OPENAI_MODEL:-}
-      SCHEMALEDGER_OPENAI_EMBEDDING_MODEL: ${SCHEMALEDGER_OPENAI_EMBEDDING_MODEL:-}
-      SCHEMALEDGER_OPENAI_TIMEOUT: ${SCHEMALEDGER_OPENAI_TIMEOUT:-30}
-      SCHEMALEDGER_GEMINI_BASE_URL: ${SCHEMALEDGER_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
-      SCHEMALEDGER_GEMINI_API_KEY: ${SCHEMALEDGER_GEMINI_API_KEY:-}
-      SCHEMALEDGER_GEMINI_MODEL: ${SCHEMALEDGER_GEMINI_MODEL:-}
-      SCHEMALEDGER_GEMINI_EMBEDDING_MODEL: ${SCHEMALEDGER_GEMINI_EMBEDDING_MODEL:-}
-      SCHEMALEDGER_GEMINI_TIMEOUT: ${SCHEMALEDGER_GEMINI_TIMEOUT:-30}
+      TRACERELAY_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/tracerelay_fresh
+      TRACERELAY_WORKSPACE: /app/workspace
+      TRACERELAY_MCP_HOST: 0.0.0.0
+      TRACERELAY_MCP_PORT: "5063"
+      TRACERELAY_MCP_TRANSPORT: sse
+      TRACERELAY_LLM_PROVIDER: ${TRACERELAY_LLM_PROVIDER:-lmstudio}
+      TRACERELAY_EMBEDDING_PROVIDER: ${TRACERELAY_EMBEDDING_PROVIDER:-}
+      TRACERELAY_LM_STUDIO_BASE_URL: ${TRACERELAY_LM_STUDIO_BASE_URL:-http://host.docker.internal:1234}
+      TRACERELAY_LM_STUDIO_MODEL: ${TRACERELAY_LM_STUDIO_MODEL:-qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine}
+      TRACERELAY_LM_STUDIO_EMBEDDING_MODEL: ${TRACERELAY_LM_STUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
+      TRACERELAY_OLLAMA_BASE_URL: ${TRACERELAY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      TRACERELAY_OLLAMA_MODEL: ${TRACERELAY_OLLAMA_MODEL:-}
+      TRACERELAY_OLLAMA_EMBEDDING_MODEL: ${TRACERELAY_OLLAMA_EMBEDDING_MODEL:-}
+      TRACERELAY_OLLAMA_TIMEOUT: ${TRACERELAY_OLLAMA_TIMEOUT:-30}
+      TRACERELAY_OPENAI_BASE_URL: ${TRACERELAY_OPENAI_BASE_URL:-https://api.openai.com}
+      TRACERELAY_OPENAI_API_KEY: ${TRACERELAY_OPENAI_API_KEY:-}
+      TRACERELAY_OPENAI_MODEL: ${TRACERELAY_OPENAI_MODEL:-}
+      TRACERELAY_OPENAI_EMBEDDING_MODEL: ${TRACERELAY_OPENAI_EMBEDDING_MODEL:-}
+      TRACERELAY_OPENAI_TIMEOUT: ${TRACERELAY_OPENAI_TIMEOUT:-30}
+      TRACERELAY_GEMINI_BASE_URL: ${TRACERELAY_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+      TRACERELAY_GEMINI_API_KEY: ${TRACERELAY_GEMINI_API_KEY:-}
+      TRACERELAY_GEMINI_MODEL: ${TRACERELAY_GEMINI_MODEL:-}
+      TRACERELAY_GEMINI_EMBEDDING_MODEL: ${TRACERELAY_GEMINI_EMBEDDING_MODEL:-}
+      TRACERELAY_GEMINI_TIMEOUT: ${TRACERELAY_GEMINI_TIMEOUT:-30}
     command: ["./scripts/docker_start_mcp.sh"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -74,4 +76,4 @@ services:
       - ./workspace:/app/workspace
 
 volumes:
-  schemaledger_postgres_data:
+  tracerelay_postgres_data:

@@ -1,4 +1,4 @@
-# SchemaLedger
+# TraceRelay
 
 [![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-7C3AED)](#plugin-support)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code%20Plugin-Supported-7C3AED)](#plugin-support)
@@ -10,7 +10,7 @@
 
 Task-first, self-evolving schema runtime for local LLM workflows.
 
-SchemaLedger is a local-first system that lets an LLM:
+TraceRelay is a local-first system that lets an LLM:
 
 - interpret a task,
 - decide the schema family,
@@ -36,7 +36,7 @@ Every step is persisted as lineage, projected into PostgreSQL, browsable in Flas
 - Claim Support reflects the inverse of unsupported claim rate.
 - Token Efficiency reflects lower average tokens per successful task.
 - Long-Task Recall reflects the inverse of long-task context forgetting rate.
-- SchemaLedger should win when the task depends on evolving structure, not just one-shot prompting.
+- TraceRelay should win when the task depends on evolving structure, not just one-shot prompting.
 - Schema-aware memory recall should reduce broad search, malformed search, and repeated search loops.
 - Gap-directed retries should lower wasted token spend relative to agents that have to rediscover task structure each turn.
 - Context-scoped memory and relay-style structured outputs should reduce long-task forgetting as the task gets deeper and more iterative.
@@ -59,10 +59,11 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 ## What Makes It Strong
 
-- Self-evolving structure: SchemaLedger starts with the schema you need now, then adds fields and relations only when the task proves they are required.
+- Self-evolving structure: TraceRelay starts with the schema you need now, then adds fields and relations only when the task proves they are required.
 - Context-scoped memory: daily work, deep research, and coding investigations do not get dumped into one noisy global memory pool.
 - Better search inputs: later searches are driven by missing fields, missing relations, evolved schema versions, and prior extracted facts.
 - Relay memory across long tasks: each extraction round leaves behind structured outputs that the next round can reuse.
+- Shared memory across agents: Codex, Claude Code, LM Studio, and MCP clients can work against the same live memory and lineage instead of keeping isolated assistant-local recall.
 - Traceable decisions: interpretation, extraction, coverage, schema evolution, retries, and failures are persisted as lineage.
 - Lower waste, fewer hallucinations: gap-directed retries reduce token burn, redundant prompting, malformed search, and unsupported guesses.
 - Operational surfaces: the same runtime is exposed through Web, PostgreSQL, MCP, Codex, Claude Code, and LM Studio.
@@ -70,11 +71,11 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 ## Why It Is Better Than Static Extraction
 
-- Fixed schema vs adaptive schema: static extraction breaks when the requested structure changes; SchemaLedger evolves the schema in the loop.
-- One-shot payload vs iterative completion: static extraction gives you one pass; SchemaLedger retries against the latest schema until the task is filled or the loop ends.
-- Generic recall vs task-aware memory: plain vector memory recalls nearby text; SchemaLedger recalls subject, profile, task, and schema-aware context.
-- Opaque output vs inspectable lineage: static extraction returns a result; SchemaLedger shows how the result was formed, changed, and validated.
-- Hidden failure vs operational trace: most wrappers hide search mistakes and retry failures; SchemaLedger records them as first-class artifacts in Web and MCP.
+- Fixed schema vs adaptive schema: static extraction breaks when the requested structure changes; TraceRelay evolves the schema in the loop.
+- One-shot payload vs iterative completion: static extraction gives you one pass; TraceRelay retries against the latest schema until the task is filled or the loop ends.
+- Generic recall vs task-aware memory: plain vector memory recalls nearby text; TraceRelay recalls subject, profile, task, and schema-aware context.
+- Opaque output vs inspectable lineage: static extraction returns a result; TraceRelay shows how the result was formed, changed, and validated.
+- Hidden failure vs operational trace: most wrappers hide search mistakes and retry failures; TraceRelay records them as first-class artifacts in Web and MCP.
 
 ## Current Working Stack
 
@@ -90,7 +91,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 Live-verified in this repository:
 
-- PostgreSQL default DSN: `postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh`
+- PostgreSQL default DSN: `postgresql://postgres:postgres@127.0.0.1:55432/tracerelay_fresh`
 - Docker Compose MCP: `sse` on `127.0.0.1:5064`
 - Web UI: `127.0.0.1:5080`
 - LM Studio model used in live runs: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
@@ -106,15 +107,17 @@ Live-verified in this repository:
 
 ## Integration Model
 
-- Codex and Claude Code use SchemaLedger as plugins.
-- LM Studio uses SchemaLedger as an MCP client.
+- Codex and Claude Code use TraceRelay as plugins.
+- LM Studio uses TraceRelay as an MCP client.
 - Ollama is supported as a runtime and embedding backend, not as an MCP client in this repository.
-- The MCP endpoint is always served by SchemaLedger itself.
+- The MCP endpoint is always served by TraceRelay itself.
 
 ## Plugin Support
 
 Codex and Claude Code are supported as plugins.
-LM Studio is not a plugin target here. It connects to the running SchemaLedger MCP server directly.
+LM Studio is not a plugin target here. It connects to the running TraceRelay MCP server directly.
+Plugin routing is more conservative than direct MCP use, so the plugin relies on TraceRelay-specific skills and MCP settings to decide when to auto-run tools.
+Before using either plugin, start the docker stack so the shared MCP endpoint is live: `docker compose up -d --build postgres web mcp`.
 
 ### Codex
 
@@ -126,8 +129,12 @@ bash ./scripts/install_codex_plugin.sh
 
 It creates:
 
-- `~/plugins/schemaledger`
+- `~/plugins/tracerelay`
 - `~/.agents/plugins/marketplace.json`
+
+The installer reads `.env` automatically and bakes `TRACERELAY_PLUGIN_MCP_URL` into the generated plugin MCP config.
+Codex expects the docker-compose MCP server to already be running and uses a dedicated plugin MCP config at `.codex-plugin/mcp.json`.
+If you change the plugin MCP URL, rerun the installer.
 
 ### Claude Code
 
@@ -139,43 +146,93 @@ bash ./scripts/install_claude_code_plugin.sh
 
 It installs:
 
-- local marketplace: `schemaledger-local`
-- plugin: `schemaledger`
+- local marketplace: `tracerelay-local`
+- plugin: `tracerelay`
+
+The installer resets old `schemaledger` plugin state, installs `tracerelay`, and is the safest way to refresh plugin behavior after changing `.env` or plugin files.
+Claude Code uses the root plugin `.mcp.json` in the official plugin layout and also expects the docker-compose MCP server to already be running.
+If you change the plugin MCP URL, rerun the installer.
+
+### Prompts That Route Well Through Plugins
+
+These phrases tend to trigger TraceRelay tools reliably in plugin mode:
+
+- "Continue what we learned about ASPI and extend the schema if needed."
+- "Structure this subject and keep the TraceRelay lineage visible."
+- "Use prior memory for Google and explain why the last run retried."
+- "Inspect the latest TraceRelay task, schema changes, and recalled memory."
 
 ## Core Flow
 
 ```mermaid
 flowchart TD
-    A[Prompt] --> B[Prompt Memory Recall]
-    B --> C[LLM Task Interpretation]
-    C --> D[Subject Memory Recall]
-    D --> E{Existing Schema?}
-    E -->|No| F[LLM Initial Schema]
-    E -->|Yes| G[Reuse Latest Schema]
-    F --> H[LLM Extraction]
+    subgraph Entry["Entry Paths"]
+      A[Codex Plugin]
+      B[Claude Code Plugin]
+      C[LM Studio MCP Client]
+      D[Direct Python Runtime]
+      E[Flask UI and API]
+    end
+
+    A --> F[MCP stdio server]
+    B --> F
+    C --> G[MCP SSE or streamable HTTP server]
+    F --> H[MCP tools, resources, prompts]
     G --> H
-    H --> I[Coverage Evaluation]
-    I -->|Complete| J[Persist Artifacts]
-    I -->|Missing Values| K[Re-extract]
-    K --> H
-    I -->|Missing Structure| L[LLM Schema Evolution]
-    L --> M[Apply New Schema Version]
-    M --> H
-    J --> N[PostgreSQL Projection]
-    N --> O[Flask UI]
-    N --> P[MCP Tools and Resources]
-    J --> Q[Memory Documents and Profiles]
+    D --> I[TaskRuntime.run_task]
+    H -->|task_evolve| I
+
+    I --> J[Prompt Memory Recall]
+    J --> K[LLM Task Interpretation]
+    K --> L[Subject Memory Recall]
+    L --> M{Existing Schema?}
+    M -->|No| N[LLM Initial Schema]
+    M -->|Yes| O[Reuse Latest Schema]
+    N --> P[LLM Extraction]
+    O --> P
+    P --> Q[Coverage Evaluation]
+    Q -->|Missing Values| R[Re-extract]
+    R --> P
+    Q -->|Missing Structure| S[LLM Schema Evolution]
+    S --> T[Apply New Schema Version]
+    T --> P
+    Q -->|Complete| U[Persist Artifact Lineage]
+
+    V[LM Studio / Ollama / OpenAI / Gemini] --> K
+    V --> N
+    V --> P
+    V --> S
+
+    U --> W[Memory Documents, Task Contexts, User Profiles]
+    U --> X[Project to PostgreSQL]
+    X --> Y[Flask UI and API]
+    X --> Z[MCP resources]
+    E -->|read path| Y
+    H -->|read path| Z
 ```
+
+Notes:
+
+- Codex and Claude Code enter through plugin-managed stdio MCP.
+- LM Studio enters through TraceRelay's MCP server over SSE or streamable HTTP.
+- MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
+- Flask is a read surface over PostgreSQL projection, not a second runtime.
+- Memory and lineage are shared across all of these surfaces once a run is persisted.
 
 ## Execution Tree
 
 ```text
-Task Run
+TraceRelay Runtime
+├─ Entry Paths
+│  ├─ Codex plugin -> stdio MCP
+│  ├─ Claude Code plugin -> stdio MCP
+│  ├─ LM Studio -> SSE / HTTP MCP
+│  └─ direct Python runtime
 ├─ Prompt
 │  ├─ raw prompt
 │  ├─ locale
 │  └─ caller / user_id
-├─ Memory Recall
+├─ Prompt Recall
 │  ├─ user profile memory
 │  ├─ prior prompt memories
 │  └─ prior related tasks
@@ -189,7 +246,7 @@ Task Run
 │  ├─ subject memory
 │  ├─ task memory context
 │  └─ prior extraction snapshots
-├─ Schema
+├─ Schema State
 │  ├─ latest schema reuse
 │  └─ or LLM-generated initial schema
 ├─ Extraction Loop
@@ -200,12 +257,14 @@ Task Run
 ├─ Persistence
 │  ├─ artifact lineage in JSONL
 │  ├─ memory documents
+│  ├─ task memory contexts
 │  ├─ user profiles
 │  └─ PostgreSQL projection
-└─ Surfaces
+└─ Shared Surfaces
    ├─ Flask task trace and memory UI
    ├─ MCP tools / resources / prompts
-   └─ repository and API access
+   ├─ PostgreSQL-backed repository and API access
+   └─ live memory shared across agents and clients
 ```
 
 ## Setup Details
@@ -230,11 +289,11 @@ Run LM Studio locally on `http://127.0.0.1:1234` with:
 - embedding model: `text-embedding-nomic-embed-text-v1.5`
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=lmstudio
-SCHEMALEDGER_EMBEDDING_PROVIDER=
-SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
-SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
-SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+TRACERELAY_LLM_PROVIDER=lmstudio
+TRACERELAY_EMBEDDING_PROVIDER=
+TRACERELAY_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+TRACERELAY_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+TRACERELAY_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
 
 #### Ollama For Both
@@ -242,56 +301,56 @@ SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 Run Ollama locally on `http://127.0.0.1:11434`, make sure your selected chat and embedding models are already available, then set:
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=ollama
-SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
-SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
-SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
-SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+TRACERELAY_LLM_PROVIDER=ollama
+TRACERELAY_EMBEDDING_PROVIDER=ollama
+TRACERELAY_OLLAMA_BASE_URL=http://127.0.0.1:11434
+TRACERELAY_OLLAMA_MODEL=qwen3:latest
+TRACERELAY_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 ```
 
 #### OpenAI For Structured Extraction And Embeddings
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=openai
-SCHEMALEDGER_EMBEDDING_PROVIDER=openai
-SCHEMALEDGER_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-SCHEMALEDGER_OPENAI_MODEL=gpt-4.1-mini
-SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+TRACERELAY_LLM_PROVIDER=openai
+TRACERELAY_EMBEDDING_PROVIDER=openai
+TRACERELAY_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+TRACERELAY_OPENAI_MODEL=gpt-4.1-mini
+TRACERELAY_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 #### Gemini For Structured Extraction And Embeddings
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=gemini
-SCHEMALEDGER_EMBEDDING_PROVIDER=gemini
-SCHEMALEDGER_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-SCHEMALEDGER_GEMINI_MODEL=gemini-2.5-flash
-SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+TRACERELAY_LLM_PROVIDER=gemini
+TRACERELAY_EMBEDDING_PROVIDER=gemini
+TRACERELAY_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+TRACERELAY_GEMINI_MODEL=gemini-2.5-flash
+TRACERELAY_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
 #### LM Studio Chat + OpenAI Embeddings
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=lmstudio
-SCHEMALEDGER_EMBEDDING_PROVIDER=openai
-SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
-SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
-SCHEMALEDGER_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+TRACERELAY_LLM_PROVIDER=lmstudio
+TRACERELAY_EMBEDDING_PROVIDER=openai
+TRACERELAY_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+TRACERELAY_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+TRACERELAY_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+TRACERELAY_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 #### LM Studio Chat + Gemini Embeddings
 
 ```bash
-SCHEMALEDGER_LLM_PROVIDER=lmstudio
-SCHEMALEDGER_EMBEDDING_PROVIDER=gemini
-SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
-SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
-SCHEMALEDGER_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+TRACERELAY_LLM_PROVIDER=lmstudio
+TRACERELAY_EMBEDDING_PROVIDER=gemini
+TRACERELAY_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+TRACERELAY_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+TRACERELAY_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+TRACERELAY_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
-If `SCHEMALEDGER_EMBEDDING_PROVIDER` is empty, SchemaLedger follows `SCHEMALEDGER_LLM_PROVIDER`.
+If `TRACERELAY_EMBEDDING_PROVIDER` is empty, TraceRelay follows `TRACERELAY_LLM_PROVIDER`.
 
 ### 3. Start PostgreSQL, Flask, And MCP With Docker Compose
 
@@ -305,7 +364,7 @@ This starts:
 - Flask Web UI on `http://127.0.0.1:5080`
 - MCP SSE on `http://127.0.0.1:5064/sse`
 
-The web and MCP containers apply the SchemaLedger PostgreSQL schema on boot and reindex the local `./workspace/artifacts.jsonl` file if it exists.
+The web and MCP containers apply the TraceRelay PostgreSQL schema on boot and reindex the local `./workspace/artifacts.jsonl` file if it exists.
 
 ### 4. Check Container Status
 
@@ -328,14 +387,14 @@ Open:
 
 ### 7. Connect LM Studio To The Compose MCP Server
 
-LM Studio uses SchemaLedger through MCP, not through a plugin install.
+LM Studio uses TraceRelay through MCP, not through a plugin install.
 
 Use this `mcp.json` entry:
 
 ```json
 {
   "mcpServers": {
-    "schemaledger": {
+    "tracerelay": {
       "url": "http://127.0.0.1:5064/sse"
     }
   }
@@ -352,7 +411,7 @@ Run:
 bash ./scripts/install_claude_code_plugin.sh
 ```
 
-This installs the `schemaledger` plugin from the local `schemaledger-local` marketplace.
+This installs the `tracerelay` plugin from the local `tracerelay-local` marketplace.
 
 ## Operations
 
@@ -376,17 +435,17 @@ Use `down -v` only when you intentionally want to drop the PostgreSQL volume as 
 
 ## CLI
 
-The short CLI name is `slg`.
+The short CLI name is `trr`.
 
-- Correct: `slg`
+- Correct: `trr`
 - Not used: `sgl`
 
-The containers use `slg` internally. If you need to invoke it manually in the docker-first workflow:
+The containers use `trr` internally. If you need to invoke it manually in the docker-first workflow:
 
 ```bash
-docker compose exec web slg db apply-schema --workspace /app/workspace --reindex
-docker compose exec web slg --help
-docker compose exec mcp slg --help
+docker compose exec web trr db apply-schema --workspace /app/workspace --reindex
+docker compose exec web trr --help
+docker compose exec mcp trr --help
 ```
 
 ## LM Studio Support
@@ -398,7 +457,7 @@ The Chat UI path is live-verified.
 ```json
 {
   "mcpServers": {
-    "schemaledger": {
+    "tracerelay": {
       "url": "http://127.0.0.1:5064/sse"
     }
   }
@@ -432,21 +491,21 @@ Important: Chat UI MCP usage is verified. API-side MCP usage may require LM Stud
 
 ### Ollama
 
-SchemaLedger supports Ollama as the runtime/backend behind its own MCP server.
+TraceRelay supports Ollama as the runtime/backend behind its own MCP server.
 
 - chat backend: `POST /api/chat`
 - embedding backend: `POST /api/embed`
-- provider switch: `SCHEMALEDGER_LLM_PROVIDER=ollama`
-- optional explicit embedding switch: `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama`
+- provider switch: `TRACERELAY_LLM_PROVIDER=ollama`
+- optional explicit embedding switch: `TRACERELAY_EMBEDDING_PROVIDER=ollama`
 
 With docker compose:
 
 ```bash
-export SCHEMALEDGER_LLM_PROVIDER=ollama
-export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
-export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
-export SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
-export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+export TRACERELAY_LLM_PROVIDER=ollama
+export TRACERELAY_EMBEDDING_PROVIDER=ollama
+export TRACERELAY_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export TRACERELAY_OLLAMA_MODEL=qwen3:latest
+export TRACERELAY_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 
 docker compose up -d --build postgres web mcp
 ```
@@ -454,44 +513,44 @@ docker compose up -d --build postgres web mcp
 If you want LM Studio for chat but Ollama for embeddings, set only:
 
 ```bash
-export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
-export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
-export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+export TRACERELAY_EMBEDDING_PROVIDER=ollama
+export TRACERELAY_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export TRACERELAY_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 ```
 
 ## Embedding Provider Setup
 
 Embedding selection is fully env-driven.
 
-- `SCHEMALEDGER_EMBEDDING_PROVIDER=lmstudio`
-- `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama`
-- `SCHEMALEDGER_EMBEDDING_PROVIDER=openai`
-- `SCHEMALEDGER_EMBEDDING_PROVIDER=gemini`
-- `SCHEMALEDGER_EMBEDDING_PROVIDER=hash`
+- `TRACERELAY_EMBEDDING_PROVIDER=lmstudio`
+- `TRACERELAY_EMBEDDING_PROVIDER=ollama`
+- `TRACERELAY_EMBEDDING_PROVIDER=openai`
+- `TRACERELAY_EMBEDDING_PROVIDER=gemini`
+- `TRACERELAY_EMBEDDING_PROVIDER=hash`
 
-If `SCHEMALEDGER_EMBEDDING_PROVIDER` is unset, SchemaLedger follows `SCHEMALEDGER_LLM_PROVIDER` first, then falls back to whatever local backend is configured.
+If `TRACERELAY_EMBEDDING_PROVIDER` is unset, TraceRelay follows `TRACERELAY_LLM_PROVIDER` first, then falls back to whatever local backend is configured.
 
 ### OpenAI Embeddings
 
 ```bash
-export SCHEMALEDGER_EMBEDDING_PROVIDER=openai
-export SCHEMALEDGER_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-export SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-export SCHEMALEDGER_OPENAI_BASE_URL=https://api.openai.com
+export TRACERELAY_EMBEDDING_PROVIDER=openai
+export TRACERELAY_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+export TRACERELAY_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+export TRACERELAY_OPENAI_BASE_URL=https://api.openai.com
 ```
 
 ### Gemini Embeddings
 
 ```bash
-export SCHEMALEDGER_EMBEDDING_PROVIDER=gemini
-export SCHEMALEDGER_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-export SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-export SCHEMALEDGER_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+export TRACERELAY_EMBEDDING_PROVIDER=gemini
+export TRACERELAY_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+export TRACERELAY_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 ```
 
 ### Claude / Anthropic Note
 
-`SCHEMALEDGER_EMBEDDING_PROVIDER=claude` or `anthropic` is intentionally rejected. Anthropic does not currently expose a direct embeddings API, so SchemaLedger fails fast instead of pretending to support it.
+`TRACERELAY_EMBEDDING_PROVIDER=claude` or `anthropic` is intentionally rejected. Anthropic does not currently expose a direct embeddings API, so TraceRelay fails fast instead of pretending to support it.
 
 ## Public Surfaces
 
@@ -532,21 +591,21 @@ export SCHEMALEDGER_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 
 ### MCP Resources
 
-- `schemaledger://tasks`
-- `schemaledger://tasks/{task_id}`
-- `schemaledger://tasks/{task_id}/coverage`
-- `schemaledger://tasks/{task_id}/schema`
-- `schemaledger://tasks/{task_id}/events`
-- `schemaledger://tasks/{task_id}/trace`
-- `schemaledger://memory/profile`
-- `schemaledger://memory/profile/{profile_id}`
-- `schemaledger://memory/subjects/{subject}`
-- `schemaledger://memory/tasks/{task_id}`
-- `schemaledger://memory/search/{query}`
+- `tracerelay://tasks`
+- `tracerelay://tasks/{task_id}`
+- `tracerelay://tasks/{task_id}/coverage`
+- `tracerelay://tasks/{task_id}/schema`
+- `tracerelay://tasks/{task_id}/events`
+- `tracerelay://tasks/{task_id}/trace`
+- `tracerelay://memory/profile`
+- `tracerelay://memory/profile/{profile_id}`
+- `tracerelay://memory/subjects/{subject}`
+- `tracerelay://memory/tasks/{task_id}`
+- `tracerelay://memory/search/{query}`
 
 ## Memory Model
 
-SchemaLedger currently supports:
+TraceRelay currently supports:
 
 - vector-style search over prior tasks and learned facts,
 - per-profile memory,

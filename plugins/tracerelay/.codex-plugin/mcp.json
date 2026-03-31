@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tracerelay": {
+      "type": "sse",
+      "url": "${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/sse}"
+    }
+  }
+}

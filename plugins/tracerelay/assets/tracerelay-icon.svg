@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="TraceRelay icon">
+  <rect width="256" height="256" rx="40" fill="#0F172A"/>
+  <path d="M58 70h86c25 0 42 15 42 38 0 17-9 29-24 35 20 5 32 19 32 40 0 30-23 49-60 49H58V70zm42 34v26h37c10 0 16-5 16-13s-6-13-16-13h-37zm0 58v34h43c12 0 19-6 19-17s-7-17-19-17h-43z" fill="#E2E8F0"/>
+  <circle cx="198" cy="82" r="12" fill="#38BDF8"/>
+  <circle cx="198" cy="128" r="12" fill="#22C55E"/>
+  <circle cx="198" cy="174" r="12" fill="#F59E0B"/>
+</svg>

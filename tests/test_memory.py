@@ -4,7 +4,7 @@ import json
 import os
 from unittest.mock import patch
 
-from schemaledger.embeddings import (
+from tracerelay.embeddings import (
     EmbeddingError,
     GeminiEmbeddingConfig,
     GeminiTextEmbedder,
@@ -17,11 +17,11 @@ from schemaledger.embeddings import (
     clear_embedding_caches,
     embedder_from_env,
 )
-from schemaledger.extraction import Extractor
-from schemaledger.memory import ArtifactMemoryStore, normalize_subject
-from schemaledger.models import ExtractionResult, TaskSpec
-from schemaledger.task_flow import InMemoryArtifactStore
-from schemaledger.task_runtime import TaskRuntime
+from tracerelay.extraction import Extractor
+from tracerelay.memory import ArtifactMemoryStore, normalize_subject
+from tracerelay.models import ExtractionResult, TaskSpec
+from tracerelay.task_flow import InMemoryArtifactStore
+from tracerelay.task_runtime import TaskRuntime
 
 
 class RecordingMemoryLLM:
@@ -188,7 +188,7 @@ def test_lmstudio_text_embedder_calls_embeddings_endpoint():
             }
         )
 
-    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+    with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
         vector = client.embed("Google memory query")
 
     assert vector == (0.1, 0.2, 0.3)
@@ -214,11 +214,11 @@ def test_embedder_from_env_auto_detects_lmstudio_embedding_model():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_LM_STUDIO_BASE_URL": "http://127.0.0.1:1234",
+            "TRACERELAY_LM_STUDIO_BASE_URL": "http://127.0.0.1:1234",
         },
         clear=False,
     ):
-        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
             embedder = embedder_from_env()
             vector = embedder.embed("ASPI")
 
@@ -241,7 +241,7 @@ def test_ollama_text_embedder_calls_embeddings_endpoint():
         assert payload["input"] == "Google memory query"
         return _FakeEmbeddingResponse({"embeddings": [[0.9, 0.8, 0.7]]})
 
-    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+    with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
         vector = client.embed("Google memory query")
 
     assert vector == (0.9, 0.8, 0.7)
@@ -267,12 +267,12 @@ def test_embedder_from_env_auto_detects_ollama_embedding_model():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_EMBEDDING_PROVIDER": "ollama",
-            "SCHEMALEDGER_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "TRACERELAY_EMBEDDING_PROVIDER": "ollama",
+            "TRACERELAY_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
         },
         clear=True,
     ):
-        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
             embedder = embedder_from_env()
             vector = embedder.embed("ASPI")
 
@@ -296,7 +296,7 @@ def test_openai_text_embedder_calls_embeddings_endpoint():
         assert payload["input"] == "Google memory query"
         return _FakeEmbeddingResponse({"data": [{"embedding": [0.11, 0.22, 0.33]}]})
 
-    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+    with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
         vector = client.embed("Google memory query")
 
     assert vector == (0.11, 0.22, 0.33)
@@ -313,13 +313,13 @@ def test_embedder_from_env_selects_openai():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_EMBEDDING_PROVIDER": "openai",
-            "SCHEMALEDGER_OPENAI_API_KEY": "sk-test",
-            "SCHEMALEDGER_OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
+            "TRACERELAY_EMBEDDING_PROVIDER": "openai",
+            "TRACERELAY_OPENAI_API_KEY": "sk-test",
+            "TRACERELAY_OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
         },
         clear=True,
     ):
-        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
             embedder = embedder_from_env()
             vector = embedder.embed("ASPI")
 
@@ -342,7 +342,7 @@ def test_gemini_text_embedder_calls_embeddings_endpoint():
         assert payload["content"]["parts"][0]["text"] == "Google memory query"
         return _FakeEmbeddingResponse({"embedding": {"values": [0.21, 0.31, 0.41]}})
 
-    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+    with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
         vector = client.embed("Google memory query")
 
     assert vector == (0.21, 0.31, 0.41)
@@ -359,13 +359,13 @@ def test_embedder_from_env_selects_gemini():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_EMBEDDING_PROVIDER": "gemini",
-            "SCHEMALEDGER_GEMINI_API_KEY": "gem-key",
-            "SCHEMALEDGER_GEMINI_EMBEDDING_MODEL": "gemini-embedding-001",
+            "TRACERELAY_EMBEDDING_PROVIDER": "gemini",
+            "TRACERELAY_GEMINI_API_KEY": "gem-key",
+            "TRACERELAY_GEMINI_EMBEDDING_MODEL": "gemini-embedding-001",
         },
         clear=True,
     ):
-        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
             embedder = embedder_from_env()
             vector = embedder.embed("ASPI")
 
@@ -379,7 +379,7 @@ def test_embedder_from_env_rejects_claude_embedding_provider():
     with patch.dict(
         os.environ,
         {
-            "SCHEMALEDGER_EMBEDDING_PROVIDER": "claude",
+            "TRACERELAY_EMBEDDING_PROVIDER": "claude",
         },
         clear=True,
     ):

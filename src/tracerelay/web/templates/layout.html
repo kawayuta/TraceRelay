@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}TraceRelay{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="shell-sidebar">
+        <a class="sidebar-brand" href="/tasks">
+          <span class="sidebar-brand-mark" aria-hidden="true"></span>
+          <span class="sidebar-brand-copy">
+            <span class="sidebar-brand-title">TraceRelay</span>
+            <span class="sidebar-brand-subtitle">Schema runtime</span>
+          </span>
+        </a>
+
+        <nav class="sidebar-nav" aria-label="Primary">
+          <a class="sidebar-nav-link" href="/tasks">
+            <span class="sidebar-nav-label">Task Dashboard</span>
+            <span class="sidebar-nav-meta">Queue</span>
+          </a>
+          <a class="sidebar-nav-link" href="/memory">
+            <span class="sidebar-nav-label">Memory Browser</span>
+            <span class="sidebar-nav-meta">Recall</span>
+          </a>
+        </nav>
+
+        <section class="sidebar-rail">
+          <div class="sidebar-panel-label">Workspace</div>
+          <div class="sidebar-stack">
+            {% for stat in app_shell.stats %}
+              <div class="sidebar-metric">
+                <span>{{ stat.label }}</span>
+                <strong>{{ stat.value }}</strong>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="sidebar-footnote">
+          <div class="sidebar-panel-label">Attention</div>
+          <div class="sidebar-stack">
+            {% for stat in app_shell.status_counts %}
+              <div class="sidebar-metric">
+                <span>{{ stat.label }}</span>
+                <strong>{{ stat.value }}</strong>
+              </div>
+            {% endfor %}
+          </div>
+          <p>{{ app_shell.signals[0] }}</p>
+        </section>
+      </aside>
+
+      <main class="shell-main">
+        <section class="page-utility-bar surface">
+          <div class="page-utility-copy">
+            <div class="page-breadcrumbs">
+              {% block page_breadcrumbs %}
+                <a href="/tasks">Runtime</a>
+                <span>/</span>
+                <span>Overview</span>
+              {% endblock %}
+            </div>
+            <div class="page-utility-note">{{ app_shell.signals[0] }}</div>
+          </div>
+          <div class="page-utility-chips">
+            {% for stat in app_shell.stats %}
+              <span class="table-chip utility-chip"><strong>{{ stat.label }}</strong> {{ stat.value }}</span>
+            {% endfor %}
+          </div>
+        </section>
+
+        <header class="page-header">
+          <div class="page-header-copy">
+            {% block page_kicker %}{% endblock %}
+            <h1 class="page-title">{% block page_title %}TraceRelay{% endblock %}</h1>
+            <p class="page-intro">{% block page_intro %}{% endblock %}</p>
+          </div>
+          <div class="page-actions">
+            {% block page_actions %}{% endblock %}
+          </div>
+        </header>
+
+        <div class="page-content">
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

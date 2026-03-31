@@ -1,8 +1,0 @@
-{
-  "name": "schemaledger",
-  "description": "Task-first, self-evolving schema runtime with traceable MCP tools, memory recall, and PostgreSQL-backed inspection.",
-  "version": "0.1.0",
-  "author": {
-    "name": "SchemaLedger"
-  }
-}
