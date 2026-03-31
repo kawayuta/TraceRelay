@@ -26,9 +26,9 @@ def test_claude_marketplace_manifest_references_local_plugin() -> None:
 
 def test_claude_plugin_mcp_config_uses_direct_server_mapping() -> None:
     config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
-    server = config["tracerelay"]
-    assert server["type"] == "sse"
-    assert server["url"] == "${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/sse}"
+    server = config["TraceRelay"]
+    assert server["type"] == "http"
+    assert server["url"] == "${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/mcp}"
 
 
 def test_claude_code_plugin_installer_uses_plugin_marketplace_flow() -> None:

@@ -34,7 +34,7 @@ def create_mcp_server(
         sync_dsn=default_sync_dsn(active_repository, sync_dsn),
     )
     server = FastMCP(
-        name="tracerelay",
+        name="TraceRelay",
         instructions=(
             "Task-first TraceRelay MCP server. "
             "Use tools to evolve tasks, inspect task lineage, and recall memory snapshots."

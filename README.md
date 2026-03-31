@@ -92,7 +92,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 Live-verified in this repository:
 
 - PostgreSQL default DSN: `postgresql://postgres:postgres@127.0.0.1:55432/tracerelay_fresh`
-- Docker Compose MCP: `sse` on `127.0.0.1:5064`
+- Docker Compose MCP: HTTP `/mcp` on `127.0.0.1:5064`
 - Web UI: `127.0.0.1:5080`
 - LM Studio model used in live runs: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
 - LM Studio embedding model used in live runs: `text-embedding-nomic-embed-text-v1.5`
@@ -134,7 +134,7 @@ It creates:
 
 The installer reads `.env` automatically and bakes `TRACERELAY_PLUGIN_MCP_URL` into the generated plugin MCP config.
 Codex expects the docker-compose MCP server to already be running and uses a dedicated plugin MCP config at `.codex-plugin/mcp.json`.
-If you change the plugin MCP URL, rerun the installer.
+Rerun the installer after changing `.env` or plugin files so Codex picks up the latest TraceRelay behavior.
 
 ### Claude Code
 
@@ -149,7 +149,7 @@ It installs:
 - local marketplace: `tracerelay-local`
 - plugin: `tracerelay`
 
-The installer resets old `schemaledger` plugin state, installs `tracerelay`, and is the safest way to refresh plugin behavior after changing `.env` or plugin files.
+The installer refreshes the local `tracerelay` plugin state and is the safest way to apply `.env` or plugin changes.
 Claude Code uses the root plugin `.mcp.json` in the official plugin layout and also expects the docker-compose MCP server to already be running.
 If you change the plugin MCP URL, rerun the installer.
 
@@ -174,10 +174,10 @@ flowchart TD
       E[Flask UI and API]
     end
 
-    A --> F[MCP stdio server]
+    A --> F[MCP HTTP client]
     B --> F
-    C --> G[MCP SSE or streamable HTTP server]
-    F --> H[MCP tools, resources, prompts]
+    C --> G[MCP HTTP client]
+    F --> H[MCP server at slash mcp]
     G --> H
     D --> I[TaskRuntime.run_task]
     H -->|task_evolve| I
@@ -213,8 +213,8 @@ flowchart TD
 
 Notes:
 
-- Codex and Claude Code enter through plugin-managed stdio MCP.
-- LM Studio enters through TraceRelay's MCP server over SSE or streamable HTTP.
+- Codex and Claude Code enter through plugin-managed HTTP MCP.
+- LM Studio enters through TraceRelay's MCP server over HTTP at `/mcp`.
 - MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
 - Flask is a read surface over PostgreSQL projection, not a second runtime.
 - Memory and lineage are shared across all of these surfaces once a run is persisted.
@@ -224,9 +224,9 @@ Notes:
 ```text
 TraceRelay Runtime
 ├─ Entry Paths
-│  ├─ Codex plugin -> stdio MCP
-│  ├─ Claude Code plugin -> stdio MCP
-│  ├─ LM Studio -> SSE / HTTP MCP
+│  ├─ Codex plugin -> HTTP MCP
+│  ├─ Claude Code plugin -> HTTP MCP
+│  ├─ LM Studio -> HTTP MCP
 │  └─ direct Python runtime
 ├─ Prompt
 │  ├─ raw prompt
@@ -362,7 +362,7 @@ This starts:
 
 - PostgreSQL 16 on `127.0.0.1:55432`
 - Flask Web UI on `http://127.0.0.1:5080`
-- MCP SSE on `http://127.0.0.1:5064/sse`
+- MCP HTTP on `http://127.0.0.1:5064/mcp`
 
 The web and MCP containers apply the TraceRelay PostgreSQL schema on boot and reindex the local `./workspace/artifacts.jsonl` file if it exists.
 
@@ -394,8 +394,8 @@ Use this `mcp.json` entry:
 ```json
 {
   "mcpServers": {
-    "tracerelay": {
-      "url": "http://127.0.0.1:5064/sse"
+    "TraceRelay": {
+      "url": "http://127.0.0.1:5064/mcp"
     }
   }
 }
@@ -457,8 +457,8 @@ The Chat UI path is live-verified.
 ```json
 {
   "mcpServers": {
-    "tracerelay": {
-      "url": "http://127.0.0.1:5064/sse"
+    "TraceRelay": {
+      "url": "http://127.0.0.1:5064/mcp"
     }
   }
 }

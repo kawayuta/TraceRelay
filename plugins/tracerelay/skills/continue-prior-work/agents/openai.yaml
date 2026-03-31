@@ -1,0 +1,10 @@
+interface:
+  display_name: "TraceRelay: Continue Prior Work"
+  short_description: "Resume earlier work on the same subject without restarting from scratch"
+  default_prompt: "Use TraceRelay to continue earlier work on the same subject, recall prior memory, and run the next structured step."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "TraceRelay"
+      description: "TraceRelay MCP server"

@@ -6,8 +6,9 @@ This document explains the runtime, persistence model, and surface area of Trace
 
 ```mermaid
 flowchart LR
-    User[User Prompt] --> LM[LM Studio]
-    LM --> Runtime[TraceRelay Task Runtime]
+    User[User Prompt] --> Entry[Plugin or MCP Client]
+    Entry --> Runtime[TraceRelay Task Runtime]
+    Providers[LM Studio / Ollama / OpenAI / Gemini] --> Runtime
     Runtime --> JSONL[JSONL Artifact Store]
     JSONL --> PG[PostgreSQL Projection]
     PG --> Web[Flask Web UI and API]
@@ -135,7 +136,7 @@ That makes the second retrieval more precise than plain prompt similarity.
 ### Human and tool surfaces
 
 - Flask pages and JSON APIs
-- FastMCP server
+- FastMCP server on HTTP `/mcp`
 
 The projection is exact-task based and does not depend on task ID prefixes.
 
@@ -166,6 +167,9 @@ The projection is exact-task based and does not depend on task ID prefixes.
 ### MCP Tools
 
 - `task_evolve`
+- `continue_prior_work`
+- `structure_subject`
+- `inspect_latest_changes`
 - `task_trace`
 - `schema_status`
 - `schema_apply`

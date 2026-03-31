@@ -370,6 +370,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert isinstance(server.fastmcp, FastMCP)
     assert {tool["name"] for tool in description["tools"]} >= {
         "task_evolve",
+        "continue_prior_work",
+        "structure_subject",
+        "inspect_latest_changes",
         "task_trace",
         "schema_status",
         "schema_apply",
@@ -378,6 +381,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     }
     assert {tool.name for tool in server.list_tools()} >= {
         "task_evolve",
+        "continue_prior_work",
+        "structure_subject",
+        "inspect_latest_changes",
         "task_trace",
         "schema_status",
         "schema_apply",
@@ -402,6 +408,23 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert server.read_resource("tracerelay://tasks")
     schema_status = server.call_tool("schema_status", {"task_id": google.task_id})
     assert schema_status["active_schema"]["version"] == 2
+    continue_result = server.call_tool(
+        "continue_prior_work",
+        {
+            "prompt": "Googleの事業内容の分析を継続して、前回の内容を踏まえて整理して",
+            "subject": "Google",
+        },
+    )
+    assert continue_result["recalled"]["kind"] == "subject"
+    assert continue_result["run"]["task_id"] == continue_result["task_id"]
+    structure_result = server.call_tool(
+        "structure_subject",
+        {"prompt": "Googleの事業内容を構造化して整理して"},
+    )
+    assert structure_result["run"]["task_id"] == structure_result["task_id"]
+    latest_changes = server.call_tool("inspect_latest_changes", {"subject": "Google"})
+    assert latest_changes["found"] is True
+    assert latest_changes["task"]["task_id"] == latest_changes["task_id"]
     task_trace_result = server.call_tool("task_trace", {"task_id": google.task_id})
     assert task_trace_result["summary"]["family"] == "organization"
     apply_result = server.call_tool("schema_apply", {"task_id": google.task_id})

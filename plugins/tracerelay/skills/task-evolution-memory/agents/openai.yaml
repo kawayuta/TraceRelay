@@ -1,0 +1,10 @@
+interface:
+  display_name: "TraceRelay: Task Evolution"
+  short_description: "Evolve schema and memory while the task runs"
+  default_prompt: "Use TraceRelay to structure the task, grow schema only when needed, and reuse memory across attempts."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "TraceRelay"
+      description: "TraceRelay MCP server"

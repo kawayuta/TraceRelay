@@ -1,0 +1,10 @@
+interface:
+  display_name: "TraceRelay: Smart Routing"
+  short_description: "Route structured investigations, continuity, and change review into TraceRelay"
+  default_prompt: "Use TraceRelay when the task needs structured investigation, prior-work continuity, memory recall, or schema-change inspection."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "TraceRelay"
+      description: "TraceRelay MCP server"

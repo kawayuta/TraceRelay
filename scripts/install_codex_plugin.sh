@@ -16,7 +16,7 @@ if [ -f "$REPO_ROOT/.env" ]; then
   set +a
 fi
 
-PLUGIN_MCP_URL="${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/sse}"
+PLUGIN_MCP_URL="${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/mcp}"
 
 mkdir -p "$HOME_PLUGIN_ROOT" "$HOME_MARKETPLACE_DIR"
 rm -rf "$LEGACY_HOME_PLUGIN_DIR"
@@ -27,8 +27,8 @@ mkdir -p "$HOME_PLUGIN_DIR/.codex-plugin"
 cat > "$HOME_PLUGIN_DIR/.codex-plugin/mcp.json" <<EOF
 {
   "mcpServers": {
-    "tracerelay": {
-      "type": "sse",
+    "TraceRelay": {
+      "type": "http",
       "url": "$PLUGIN_MCP_URL"
     }
   }

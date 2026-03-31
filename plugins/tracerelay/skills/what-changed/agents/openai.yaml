@@ -1,0 +1,10 @@
+interface:
+  display_name: "TraceRelay: What Changed"
+  short_description: "Inspect the latest run, retries, and schema changes"
+  default_prompt: "Use TraceRelay to inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "TraceRelay"
+      description: "TraceRelay MCP server"

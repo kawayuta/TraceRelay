@@ -23,6 +23,18 @@ from ..web.repository import PostgresTaskRepository, TaskBrowseRepository
 def list_tools() -> list[dict[str, object]]:
     return [
         {"name": "task_evolve", "description": "Run the task-first runtime for a prompt."},
+        {
+            "name": "continue_prior_work",
+            "description": "Continue earlier work on the same subject, reuse prior memory, and run the next structured step.",
+        },
+        {
+            "name": "structure_subject",
+            "description": "Turn a natural-language research or analysis request into structured fields, schema evolution, and traceable output.",
+        },
+        {
+            "name": "inspect_latest_changes",
+            "description": "Inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied.",
+        },
         {"name": "task_trace", "description": "Return the task flowchart and decision trace."},
         {"name": "schema_status", "description": "Return schema lineage for a task."},
         {"name": "schema_apply", "description": "Return the active schema after auto-apply evolution."},
@@ -65,6 +77,50 @@ class MCPToolbox:
                 }
             self._sync_task(run.task_id)
             return {"task_id": run.task_id, "status": run.status, "reason": run.reason}
+        if name == "continue_prior_work":
+            prompt = str(arguments["prompt"])
+            subject = _optional_string(arguments.get("subject"))
+            limit = int(arguments.get("limit", 6))
+            recall = (
+                build_subject_memory(self.repository, subject, limit=limit)
+                if subject
+                else build_memory_search(self.repository, prompt, limit=limit)
+            )
+            run = dict(self.call("task_evolve", {"prompt": prompt}))
+            task_id = str(run["task_id"])
+            return {
+                "task_id": task_id,
+                "recalled": recall,
+                "run": run,
+                "trace": self.repository.get_task_trace(task_id),
+                "task_memory": build_task_memory_context(self.repository, task_id, limit=limit),
+            }
+        if name == "structure_subject":
+            prompt = str(arguments["prompt"])
+            run = dict(self.call("task_evolve", {"prompt": prompt}))
+            task_id = str(run["task_id"])
+            return {
+                "task_id": task_id,
+                "run": run,
+                "schema": self.repository.get_task_schema(task_id),
+                "trace": self.repository.get_task_trace(task_id),
+            }
+        if name == "inspect_latest_changes":
+            task_id = self._resolve_latest_task_id(
+                task_id=_optional_string(arguments.get("task_id")),
+                subject=_optional_string(arguments.get("subject")),
+            )
+            if task_id is None:
+                return {"found": False, "reason": "no_tasks"}
+            return {
+                "found": True,
+                "task_id": task_id,
+                "task": self.repository.get_task(task_id),
+                "trace": self.repository.get_task_trace(task_id),
+                "schema": self.repository.get_task_schema(task_id),
+                "events": self.repository.get_task_events(task_id),
+                "task_memory": build_task_memory_context(self.repository, task_id, limit=6),
+            }
         if name == "task_trace":
             return self.repository.get_task_trace(str(arguments["task_id"]))
         if name == "schema_status":
@@ -209,6 +265,18 @@ class MCPToolbox:
             return None
         return candidates[-1]
 
+    def _resolve_latest_task_id(self, *, task_id: str | None = None, subject: str | None = None) -> str | None:
+        if task_id:
+            return task_id
+        if subject:
+            matches = self.repository.search(subject)
+            if matches:
+                return str(matches[0]["task_id"])
+        tasks = self.repository.list_tasks()
+        if not tasks:
+            return None
+        return str(tasks[0]["task_id"])
+
     def _failure_reason(self, exc: Exception) -> str:
         if isinstance(exc, LLMError):
             return "llm_error"
@@ -234,6 +302,44 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
     )
     def task_evolve(prompt: str) -> dict[str, object]:
         return dict(toolbox.call("task_evolve", {"prompt": prompt}))
+
+    @mcp.tool(
+        name="continue_prior_work",
+        description="Continue earlier work on the same subject, reuse prior memory, and run the next structured step.",
+    )
+    def continue_prior_work(prompt: str, subject: str | None = None, limit: int = 6) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "continue_prior_work",
+                {
+                    "prompt": prompt,
+                    **({"subject": subject} if subject else {}),
+                    "limit": limit,
+                },
+            )
+        )
+
+    @mcp.tool(
+        name="structure_subject",
+        description="Turn a natural-language research or analysis request into structured fields, schema evolution, and traceable output.",
+    )
+    def structure_subject(prompt: str) -> dict[str, object]:
+        return dict(toolbox.call("structure_subject", {"prompt": prompt}))
+
+    @mcp.tool(
+        name="inspect_latest_changes",
+        description="Inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied.",
+    )
+    def inspect_latest_changes(task_id: str | None = None, subject: str | None = None) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "inspect_latest_changes",
+                {
+                    **({"task_id": task_id} if task_id else {}),
+                    **({"subject": subject} if subject else {}),
+                },
+            )
+        )
 
     @mcp.tool(
         name="task_trace",
@@ -305,3 +411,10 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
     )
     def task_memory_context(task_id: str, limit: int = 6) -> dict[str, object]:
         return dict(toolbox.call("task_memory_context", {"task_id": task_id, "limit": limit}))
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

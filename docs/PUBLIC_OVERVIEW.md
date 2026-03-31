@@ -104,7 +104,7 @@ This repository has already been run live with:
 - LM Studio for generation and embeddings
 - PostgreSQL on `127.0.0.1:55432`
 - Flask on `127.0.0.1:5080`
-- MCP SSE on `127.0.0.1:5063`
+- MCP HTTP on `http://127.0.0.1:5064/mcp`
 
 Google task recall is currently verified through:
 

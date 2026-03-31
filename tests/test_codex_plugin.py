@@ -41,11 +41,25 @@ def test_plugin_skills_exist_and_cover_auto_routing() -> None:
     assert "structure this" in structure_skill
 
 
+def test_plugin_skills_have_openai_agent_metadata() -> None:
+    skill_roots = [
+        PLUGIN_ROOT / "skills" / "use-tracerelay",
+        PLUGIN_ROOT / "skills" / "task-evolution-memory",
+        PLUGIN_ROOT / "skills" / "continue-prior-work",
+        PLUGIN_ROOT / "skills" / "what-changed",
+        PLUGIN_ROOT / "skills" / "structure-this",
+    ]
+    for skill_root in skill_roots:
+        metadata = (skill_root / "agents" / "openai.yaml").read_text()
+        assert 'value: "TraceRelay"' in metadata
+        assert "default_prompt:" in metadata
+
+
 def test_plugin_mcp_config_uses_repo_local_stdio_server() -> None:
     config = json.loads((PLUGIN_ROOT / ".codex-plugin" / "mcp.json").read_text())
-    server = config["mcpServers"]["tracerelay"]
-    assert server["type"] == "sse"
-    assert server["url"] == "${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/sse}"
+    server = config["mcpServers"]["TraceRelay"]
+    assert server["type"] == "http"
+    assert server["url"] == "${TRACERELAY_PLUGIN_MCP_URL:-http://127.0.0.1:5064/mcp}"
 
 
 def test_marketplace_registers_repo_local_plugin() -> None:
@@ -67,3 +81,4 @@ def test_home_local_installer_script_exists() -> None:
     assert '.codex-plugin/mcp.json' in content
     assert "TRACERELAY_PLUGIN_MCP_URL" in content
     assert '. "$REPO_ROOT/.env"' in content
+    assert '"TraceRelay"' in content
