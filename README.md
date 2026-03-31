@@ -22,6 +22,26 @@ SchemaLedger is a local-first system that lets an LLM:
 
 Every step is persisted as lineage, projected into PostgreSQL, browsable in Flask, and exposed through MCP.
 
+## Benchmark Snapshot
+
+### Normalized Comparison
+
+![Benchmark Snapshot](./docs/images/benchmark-snapshot.svg)
+
+### What These Charts Are Meant To Show
+
+- The benchmark is shown as one normalized profile so the comparison reads as an overall product shape, not five disconnected charts.
+- Higher is better across all axes in this view.
+- Query Quality reflects the inverse of broad or malformed query rate.
+- Claim Support reflects the inverse of unsupported claim rate.
+- Token Efficiency reflects lower average tokens per successful task.
+- Long-Task Recall reflects the inverse of long-task context forgetting rate.
+- SchemaLedger should win when the task depends on evolving structure, not just one-shot prompting.
+- Schema-aware memory recall should reduce broad search, malformed search, and repeated search loops.
+- Gap-directed retries should lower wasted token spend relative to agents that have to rediscover task structure each turn.
+- Context-scoped memory and relay-style structured outputs should reduce long-task forgetting as the task gets deeper and more iterative.
+- Traceable schema evolution and memory formation should reduce unsupported claims by making missing facts and missing structure explicit.
+
 ## Quick Start
 
 ```bash
@@ -55,26 +75,6 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - Generic recall vs task-aware memory: plain vector memory recalls nearby text; SchemaLedger recalls subject, profile, task, and schema-aware context.
 - Opaque output vs inspectable lineage: static extraction returns a result; SchemaLedger shows how the result was formed, changed, and validated.
 - Hidden failure vs operational trace: most wrappers hide search mistakes and retry failures; SchemaLedger records them as first-class artifacts in Web and MCP.
-
-## Benchmark Snapshot
-
-### Normalized Comparison
-
-![Benchmark Snapshot](./docs/images/benchmark-snapshot.svg)
-
-### What These Charts Are Meant To Show
-
-- The benchmark is shown as one normalized profile so the comparison reads as an overall product shape, not five disconnected charts.
-- Higher is better across all axes in this view.
-- Query Quality reflects the inverse of broad or malformed query rate.
-- Claim Support reflects the inverse of unsupported claim rate.
-- Token Efficiency reflects lower average tokens per successful task.
-- Long-Task Recall reflects the inverse of long-task context forgetting rate.
-- SchemaLedger should win when the task depends on evolving structure, not just one-shot prompting.
-- Schema-aware memory recall should reduce broad search, malformed search, and repeated search loops.
-- Gap-directed retries should lower wasted token spend relative to agents that have to rediscover task structure each turn.
-- Context-scoped memory and relay-style structured outputs should reduce long-task forgetting as the task gets deeper and more iterative.
-- Traceable schema evolution and memory formation should reduce unsupported claims by making missing facts and missing structure explicit.
 
 ## Current Working Stack
 
