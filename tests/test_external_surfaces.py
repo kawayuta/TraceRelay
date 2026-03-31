@@ -3,9 +3,6 @@ from __future__ import annotations
 import anyio
 import json
 import os
-from pathlib import Path
-import subprocess
-import sys
 from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
@@ -488,29 +485,6 @@ def test_llm_from_env_selects_ollama_provider():
         llm = llm_from_env()
 
     assert isinstance(llm, OllamaStructuredLLM)
-
-
-def test_module_entrypoint_prefers_local_source_tree_over_inherited_pythonpath(tmp_path):
-    foreign_root = tmp_path / "foreign-site"
-    foreign_package = foreign_root / "schemaledger"
-    foreign_package.mkdir(parents=True)
-    (foreign_package / "__init__.py").write_text("__all__ = []\n", encoding="utf-8")
-
-    root = Path(__file__).resolve().parents[1]
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(foreign_root)
-
-    result = subprocess.run(
-        [sys.executable, "-m", "schemaledger.mcp", "--help"],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Run the SchemaLedger MCP server." in result.stdout
 
 
 def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):

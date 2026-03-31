@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "schemaledger-implementation-plan"
+name = "schemaledger"
 version = "0.1.0"
-description = "Task-first runtime slice for SchemaLedger 2.0.0rc3"
+description = "Task-first, self-evolving schema runtime for local LLM workflows"
 requires-python = ">=3.11"
 dependencies = [
   "flask>=3.1,<4",

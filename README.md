@@ -1,12 +1,12 @@
 # SchemaLedger
 
-[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-0F172A)](#plugins-support)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-MCP%20Ready-D97706)](#plugins-support)
-[![MCP](https://img.shields.io/badge/MCP-FastMCP-2563EB)](#mcp-tools)
-[![LM Studio](https://img.shields.io/badge/LM%20Studio-Connected-10B981)](#lm-studio-setup)
-[![Ollama](https://img.shields.io/badge/Ollama-Supported-111827)](#ollama-setup)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Projected-336791?logo=postgresql&logoColor=white)](#current-working-stack)
-[![Flask UI](https://img.shields.io/badge/Flask-Trace%20UI-000000?logo=flask&logoColor=white)](#public-surfaces)
+[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-7C3AED)](#plugins-support)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-Supported-7C3AED)](#plugins-support)
+[![MCP](https://img.shields.io/badge/MCP-Supported-2563EB)](#public-surfaces)
+[![LM Studio](https://img.shields.io/badge/LM%20Studio-Supported-10B981)](#lm-studio-setup)
+[![Ollama](https://img.shields.io/badge/Ollama-Supported-10B981)](#ollama-setup)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-336791?logo=postgresql&logoColor=white)](#current-working-stack)
+[![Flask UI](https://img.shields.io/badge/Flask%20UI-Supported-F59E0B?logo=flask&logoColor=white)](#public-surfaces)
 
 Task-first, self-evolving schema runtime for local LLM workflows.
 
@@ -525,7 +525,7 @@ The JSONL artifact store is the write-ahead source of truth. PostgreSQL is the q
 
 ## Example Outcome
 
-A live-verified Google run in this workspace produced:
+A live-verified Google run produced:
 
 - `resolved_subject=Google`
 - `family=organization`
@@ -548,20 +548,3 @@ Run the test suite:
 ```bash
 env PYTHONNOUSERSITE=1 uv run pytest -q
 ```
-
-Current passing status in this workspace: `49 passed`.
-
-## Status
-
-This repository is no longer just a plan bundle. It contains a working runtime slice with:
-
-- live LM Studio integration,
-- Ollama-compatible MCP/runtime backend,
-- schema evolution loops,
-- JSONL persistence,
-- PostgreSQL projection,
-- Flask trace and memory UI,
-- FastMCP server,
-- live memory retrieval over embeddings.
-
-It is still an experimental local system, but it is already useful as a transparent, inspectable, self-evolving structured research runtime.
