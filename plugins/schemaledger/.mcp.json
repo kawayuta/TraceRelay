@@ -18,12 +18,17 @@
       "env": {
         "PYTHONNOUSERSITE": "1",
         "PYTHONPATH": "../../src:../..",
+        "SCHEMALEDGER_LLM_PROVIDER": "lmstudio",
+        "SCHEMALEDGER_EMBEDDING_PROVIDER": "lmstudio",
         "SCHEMALEDGER_LM_STUDIO_BASE_URL": "http://127.0.0.1:1234",
         "SCHEMALEDGER_LM_STUDIO_MODEL": "qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine",
         "SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5",
+        "SCHEMALEDGER_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+        "SCHEMALEDGER_OLLAMA_MODEL": "",
+        "SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL": "",
         "SCHEMALEDGER_POSTGRES_DSN": "postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh"
       },
-      "note": "Repo-local SchemaLedger MCP server. Requires LM Studio on 127.0.0.1:1234 and PostgreSQL from docker compose."
+      "note": "Repo-local SchemaLedger MCP server. Defaults to LM Studio, but can switch to Ollama by changing provider env vars."
     }
   }
 }

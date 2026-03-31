@@ -156,7 +156,10 @@ LocalMCPServer = SchemaLedgerMCPServer
 def build_runtime_from_env(workspace: str) -> tuple[TaskRuntime, JsonlArtifactStore]:
     llm = llm_from_env()
     if llm is None:
-        raise RuntimeError("LM Studio environment is required to run the MCP server")
+        raise RuntimeError(
+            "LLM environment is required to run the MCP server. "
+            "Configure SCHEMALEDGER_LLM_PROVIDER with either LM Studio or Ollama settings."
+        )
     store = JsonlArtifactStore(workspace)
     return TaskRuntime(llm=llm, artifact_store=store), store
 

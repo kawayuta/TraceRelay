@@ -48,6 +48,13 @@ class LMStudioConfig:
     timeout_s: float = 30.0
 
 
+@dataclass(frozen=True)
+class OllamaConfig:
+    base_url: str
+    model: str
+    timeout_s: float = 30.0
+
+
 class LMStudioClient:
     def __init__(self, config: LMStudioConfig) -> None:
         self.config = config
@@ -83,34 +90,72 @@ class LMStudioClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        try:
-            with request.urlopen(req, timeout=self.config.timeout_s) as response:
-                raw = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise LLMError(f"LM Studio request failed: HTTP {exc.code}: {body}") from exc
-        except URLError as exc:
-            raise LLMError(f"LM Studio request failed: {exc}") from exc
+        raw = _post_json(
+            req,
+            timeout_s=self.config.timeout_s,
+            provider_name="LM Studio",
+        )
         try:
             message = raw["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected LM Studio payload: {raw!r}") from exc
-        candidates = _message_json_candidates(message)
-        parse_errors: list[str] = []
-        for source, candidate in candidates:
-            try:
-                return _parse_json_content(candidate)
-            except json.JSONDecodeError as exc:
-                parse_errors.append(f"{source}: {exc}")
-        candidate_sources = ", ".join(source for source, _ in candidates) or "none"
-        raise LLMError(
-            "LM Studio did not return JSON content. "
-            f"candidate_sources={candidate_sources}; parse_errors={parse_errors!r}; message={message!r}"
+        return _parse_json_message(message, provider_name="LM Studio")
+
+
+class OllamaClient:
+    def __init__(self, config: OllamaConfig) -> None:
+        self.config = config
+
+    def complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        temperature: float = 0.0,
+    ) -> dict[str, Any]:
+        payload = {
+            "model": self.config.model,
+            "stream": False,
+            "think": False,
+            "format": schema,
+            "options": {"temperature": temperature},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{user_prompt}\n\n"
+                        f"Return a JSON object matching this schema name: {schema_name}.\n"
+                        f"Schema: {json.dumps(schema, ensure_ascii=False)}"
+                    ),
+                },
+            ],
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/api/chat",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
+        raw = _post_json(
+            req,
+            timeout_s=self.config.timeout_s,
+            provider_name="Ollama",
+        )
+        try:
+            message = raw["message"]
+        except (KeyError, TypeError) as exc:
+            raise LLMError(f"Unexpected Ollama payload: {raw!r}") from exc
+        return _parse_json_message(message, provider_name="Ollama")
 
 
-class LMStudioStructuredLLM:
-    def __init__(self, client: LMStudioClient) -> None:
+class _PromptDrivenStructuredLLM:
+    provider = "unknown"
+
+    def __init__(self, client: LMStudioClient | OllamaClient) -> None:
         self.client = client
 
     def interpret_task(self, spec: TaskSpec) -> dict[str, Any]:
@@ -260,14 +305,38 @@ class LMStudioStructuredLLM:
             status=str(payload.get("status", "success")),
             provider_metadata={
                 "attempt": attempt,
-                "provider": "lmstudio",
+                "provider": self.provider,
                 "base_url": self.client.config.base_url,
                 "model": self.client.config.model,
             },
         )
 
 
+class LMStudioStructuredLLM(_PromptDrivenStructuredLLM):
+    provider = "lmstudio"
+
+
+class OllamaStructuredLLM(_PromptDrivenStructuredLLM):
+    provider = "ollama"
+
+
 def llm_from_env() -> StructuredLLM | None:
+    provider = _infer_llm_provider_from_env()
+    if provider == "ollama":
+        base_url = os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL")
+        model = os.getenv("SCHEMALEDGER_OLLAMA_MODEL")
+        if not base_url or not model:
+            return None
+        return OllamaStructuredLLM(
+            OllamaClient(
+                OllamaConfig(
+                    base_url=base_url,
+                    model=model,
+                    timeout_s=float(os.getenv("SCHEMALEDGER_OLLAMA_TIMEOUT", "30")),
+                )
+            )
+        )
+
     base_url = os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL")
     model = os.getenv("SCHEMALEDGER_LM_STUDIO_MODEL")
     if not base_url or not model:
@@ -281,6 +350,17 @@ def llm_from_env() -> StructuredLLM | None:
             )
         )
     )
+
+
+def _infer_llm_provider_from_env() -> str:
+    provider = os.getenv("SCHEMALEDGER_LLM_PROVIDER", "").strip().casefold()
+    if provider in {"lmstudio", "ollama"}:
+        return provider
+    if os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL") and os.getenv("SCHEMALEDGER_LM_STUDIO_MODEL"):
+        return "lmstudio"
+    if os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL") and os.getenv("SCHEMALEDGER_OLLAMA_MODEL"):
+        return "ollama"
+    return "lmstudio"
 
 
 def _string_array_schema() -> dict[str, Any]:
@@ -415,7 +495,7 @@ def _message_json_candidates(message: Any) -> list[tuple[str, str]]:
     if not isinstance(message, dict):
         return []
     candidates: list[tuple[str, str]] = []
-    for key in ("content", "reasoning_content"):
+    for key in ("content", "reasoning_content", "thinking"):
         value = message.get(key)
         if isinstance(value, str) and value.strip():
             candidates.append((key, value))
@@ -449,3 +529,29 @@ def _extract_json_object(content: str, decoder: json.JSONDecoder) -> dict[str, A
         if isinstance(parsed, dict):
             return parsed
     return None
+
+
+def _post_json(req: request.Request, *, timeout_s: float, provider_name: str) -> dict[str, Any]:
+    try:
+        with request.urlopen(req, timeout=timeout_s) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise LLMError(f"{provider_name} request failed: HTTP {exc.code}: {body}") from exc
+    except URLError as exc:
+        raise LLMError(f"{provider_name} request failed: {exc}") from exc
+
+
+def _parse_json_message(message: Any, *, provider_name: str) -> dict[str, Any]:
+    candidates = _message_json_candidates(message)
+    parse_errors: list[str] = []
+    for source, candidate in candidates:
+        try:
+            return _parse_json_content(candidate)
+        except json.JSONDecodeError as exc:
+            parse_errors.append(f"{source}: {exc}")
+    candidate_sources = ", ".join(source for source, _ in candidates) or "none"
+    raise LLMError(
+        f"{provider_name} did not return JSON content. "
+        f"candidate_sources={candidate_sources}; parse_errors={parse_errors!r}; message={message!r}"
+    )

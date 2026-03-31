@@ -4,6 +4,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-MCP%20Ready-D97706)](#claude-code)
 [![MCP](https://img.shields.io/badge/MCP-FastMCP-2563EB)](#mcp-tools)
 [![LM Studio](https://img.shields.io/badge/LM%20Studio-Connected-10B981)](#lm-studio-setup)
+[![Ollama](https://img.shields.io/badge/Ollama-Supported-111827)](#ollama-setup)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Projected-336791?logo=postgresql&logoColor=white)](#current-working-stack)
 [![Flask UI](https://img.shields.io/badge/Flask-Trace%20UI-000000?logo=flask&logoColor=white)](#public-surfaces)
 
@@ -27,7 +28,7 @@ Every step is persisted as lineage, projected into PostgreSQL, browsable in Flas
 - The runtime is traceable. Interpretation, extraction, coverage, schema gaps, schema candidates, reviews, and final status are all persisted as artifacts.
 - Memory is built into the same runtime, not bolted on separately. Prior tasks, subject memory, profile memory, and extraction snapshots can be recalled into later tasks.
 - The same core logic backs Web, PostgreSQL, and MCP. You are not maintaining three different products with drift.
-- It runs local-first with LM Studio, PostgreSQL, and FastMCP. That is useful when privacy, controllability, and inspectability matter more than closed hosted pipelines.
+- It runs local-first with LM Studio or Ollama, PostgreSQL, and FastMCP. That is useful when privacy, controllability, and inspectability matter more than closed hosted pipelines.
 - The active runtime is LLM-first. There is no heuristic family fallback in the execution path.
 
 ## Why It Is Better Than Static Extraction
@@ -39,9 +40,9 @@ Every step is persisted as lineage, projected into PostgreSQL, browsable in Flas
 
 ## Current Working Stack
 
-- LLM runtime: LM Studio
-- Structured extraction: `POST /v1/chat/completions`
-- Embeddings: LM Studio `/v1/embeddings`
+- LLM runtime: LM Studio or Ollama
+- Structured extraction: LM Studio `POST /v1/chat/completions` or Ollama `POST /api/chat`
+- Embeddings: LM Studio `POST /v1/embeddings` or Ollama `POST /api/embed`
 - Artifact store: JSONL
 - Projection: PostgreSQL
 - Web: Flask
@@ -54,6 +55,7 @@ Live-verified in this repository:
 - Web UI: `127.0.0.1:5080`
 - LM Studio model used in live runs: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
 - LM Studio embedding model used in live runs: `text-embedding-nomic-embed-text-v1.5`
+- Ollama backend: supported through `SCHEMALEDGER_LLM_PROVIDER=ollama`
 
 ## Public Docs
 
@@ -77,7 +79,7 @@ PYTHONPATH=../../src:../.. uv run --project ../.. python -m schemaledger.mcp \
   --dsn postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh
 ```
 
-with LM Studio and PostgreSQL injected through plugin-local environment variables. For the main app stack, the default runtime path is still `docker compose`.
+with LM Studio and PostgreSQL injected through plugin-local environment variables. The same plugin config can be switched to Ollama by changing `SCHEMALEDGER_LLM_PROVIDER`, `SCHEMALEDGER_OLLAMA_MODEL`, and optional embedding env vars. For the main app stack, the default runtime path is still `docker compose`.
 
 This repo already includes the local marketplace entry Codex expects:
 
@@ -201,7 +203,11 @@ Task Run
 
 ## Quick Start
 
-### 1. Start LM Studio
+### 1. Choose An LLM Backend
+
+SchemaLedger now supports either LM Studio or Ollama for the MCP/runtime backend.
+
+#### Option A. LM Studio
 
 Run LM Studio locally on `http://127.0.0.1:1234` with:
 
@@ -215,6 +221,20 @@ export SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
 export SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
 export SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
+
+#### Option B. Ollama
+
+Run Ollama locally on `http://127.0.0.1:11434`, make sure your selected chat and embedding models are already available, then export:
+
+```bash
+export SCHEMALEDGER_LLM_PROVIDER=ollama
+export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
+export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
+export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+```
+
+If you do not set `SCHEMALEDGER_EMBEDDING_PROVIDER`, it follows the active LLM provider by default.
 
 ### 2. Start PostgreSQL, Flask, And MCP With Docker Compose
 
@@ -353,6 +373,35 @@ The OpenAI-compatible structured-output endpoint is:
 
 Important: Chat UI MCP usage is verified. API-side MCP usage may require LM Studio plugin permission settings depending on your local server configuration.
 
+## Ollama Setup
+
+SchemaLedger supports Ollama as the runtime/backend behind MCP.
+
+- chat backend: `POST /api/chat`
+- embedding backend: `POST /api/embed`
+- provider switch: `SCHEMALEDGER_LLM_PROVIDER=ollama`
+- optional explicit embedding switch: `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama`
+
+With docker compose:
+
+```bash
+export SCHEMALEDGER_LLM_PROVIDER=ollama
+export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
+export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
+export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+
+docker compose up -d --build postgres web mcp
+```
+
+If you want LM Studio for chat but Ollama for embeddings, set only:
+
+```bash
+export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
+export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+```
+
 ## Public Surfaces
 
 ### Flask Pages
@@ -415,7 +464,7 @@ SchemaLedger currently supports:
 - automatic retrieval of prior extraction results into later tasks,
 - subject-level recall such as “what did we learn about ASPI last time?”.
 
-The active embedding backend is LM Studio embeddings when available. Offline fallback remains available for development, but live runs use real embeddings.
+The active embedding backend can be LM Studio or Ollama. Offline hash fallback remains available for development when no live embedding provider is configured.
 
 ## Persistence Model
 
@@ -464,13 +513,14 @@ Run the test suite:
 env PYTHONNOUSERSITE=1 uv run pytest -q
 ```
 
-Current passing status in this workspace: `27 passed`.
+Current passing status in this workspace: `44 passed`.
 
 ## Status
 
 This repository is no longer just a plan bundle. It contains a working runtime slice with:
 
 - live LM Studio integration,
+- Ollama-compatible MCP/runtime backend,
 - schema evolution loops,
 - JSONL persistence,
 - PostgreSQL projection,

@@ -12,7 +12,16 @@ from mcp.server.fastmcp import FastMCP
 
 from schemaledger.config import DEFAULT_POSTGRES_DSN
 from schemaledger.indexer.loader import TaskRuntimeProjector
-from schemaledger.llm import LMStudioClient, LMStudioConfig, LMStudioStructuredLLM, _task_extraction_schema
+from schemaledger.llm import (
+    LMStudioClient,
+    LMStudioConfig,
+    LMStudioStructuredLLM,
+    OllamaClient,
+    OllamaConfig,
+    OllamaStructuredLLM,
+    _task_extraction_schema,
+    llm_from_env,
+)
 from schemaledger.mcp.server import LocalMCPServer, create_mcp_server
 from schemaledger.models import ExtractionResult, SchemaVersion, TaskSpec
 from schemaledger.schema_store import ArtifactSchemaStore
@@ -129,6 +138,60 @@ def _fake_reasoning_content_urlopen(req, timeout=None):  # noqa: ANN001
                 }
             }
         ]
+    }
+    return _FakeHTTPResponse(raw)
+
+
+def _fake_ollama_urlopen(req, timeout=None):  # noqa: ANN001
+    assert req.full_url.endswith("/api/chat")
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload["stream"] is False
+    assert payload["think"] is False
+    assert payload["model"] == "ollama-local-model"
+    assert payload["format"]["type"] == "object"
+    system_prompt = payload["messages"][0]["content"]
+    if "TASK_INTERPRETATION" in system_prompt:
+        content = {
+            "intent": "investigate_subject",
+            "resolved_subject": "ACME Hypergrid",
+            "subject_candidates": ["ACME Hypergrid"],
+            "family": "organization",
+            "family_rationale": "The prompt requests an organization profile.",
+            "requested_fields": ["overview", "business_lines"],
+            "requested_relations": [],
+            "scope_hints": ["overview", "business_lines"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+    elif "INITIAL_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Initial organization schema.",
+        }
+    elif "EVOLVE_SCHEMA" in system_prompt:
+        content = {
+            "family": "organization",
+            "required_fields": ["overview", "business_lines"],
+            "optional_fields": ["leadership"],
+            "relations": [],
+            "rationale": "Add leadership if needed.",
+        }
+    else:
+        content = {
+            "payload": {
+                "overview": "ACME Hypergrid organization profile",
+                "business_lines": ["grid control", "monitoring"],
+            },
+            "status": "success",
+        }
+    raw = {
+        "model": payload["model"],
+        "done": True,
+        "done_reason": "stop",
+        "message": {"role": "assistant", "content": json.dumps(content)},
     }
     return _FakeHTTPResponse(raw)
 
@@ -390,6 +453,41 @@ def test_lm_studio_parses_reasoning_content_when_content_is_empty():
 
     assert payload["resolved_subject"] == "ASPI"
     assert payload["family"] == "deep_research_target"
+
+
+def test_ollama_http_integration(tmp_path):
+    with patch("schemaledger.llm.request.urlopen", side_effect=_fake_ollama_urlopen):
+        client = OllamaClient(
+            OllamaConfig(
+                base_url="http://127.0.0.1:11434",
+                model="ollama-local-model",
+                timeout_s=2.0,
+            )
+        )
+        llm = OllamaStructuredLLM(client)
+        store = JsonlArtifactStore(tmp_path / "workspace")
+        runtime = TaskRuntime(llm=llm, artifact_store=store)
+        run = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid."))
+
+    assert run.interpretation.resolved_subject == "ACME Hypergrid"
+    assert run.interpretation.family == "organization"
+    assert run.extraction.provider_metadata["provider"] == "ollama"
+    assert run.status == "success"
+
+
+def test_llm_from_env_selects_ollama_provider():
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_LLM_PROVIDER": "ollama",
+            "SCHEMALEDGER_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "SCHEMALEDGER_OLLAMA_MODEL": "qwen3",
+        },
+        clear=True,
+    ):
+        llm = llm_from_env()
+
+    assert isinstance(llm, OllamaStructuredLLM)
 
 
 def test_module_entrypoint_prefers_local_source_tree_over_inherited_pythonpath(tmp_path):

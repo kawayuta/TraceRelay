@@ -26,9 +26,16 @@ from the repo root. That installs a home-local copy at `~/plugins/schemaledger` 
 
 - `uv sync`
 - `docker compose up -d --build postgres web mcp`
-- LM Studio running on `http://127.0.0.1:1234`
-- Chat model: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
-- Embedding model: `text-embedding-nomic-embed-text-v1.5`
+- either LM Studio on `http://127.0.0.1:1234`
+- or Ollama on `http://127.0.0.1:11434`
+- PostgreSQL from docker compose on `127.0.0.1:55432`
+
+The checked-in plugin config defaults to LM Studio. To switch it to Ollama, edit `./plugins/schemaledger/.mcp.json` and set:
+
+- `SCHEMALEDGER_LLM_PROVIDER=ollama`
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama` if you want Ollama embeddings too
+- `SCHEMALEDGER_OLLAMA_MODEL=<your chat model>`
+- `SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=<your embedding model>`
 
 ## What The Plugin Starts
 

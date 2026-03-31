@@ -30,6 +30,13 @@ class LMStudioEmbeddingConfig:
     timeout_s: float = 30.0
 
 
+@dataclass(frozen=True)
+class OllamaEmbeddingConfig:
+    base_url: str
+    model: str
+    timeout_s: float = 30.0
+
+
 class HashingTextEmbedder:
     algorithm = "hash_vector_v1"
 
@@ -94,6 +101,48 @@ class LMStudioTextEmbedder:
         return vector
 
 
+class OllamaTextEmbedder:
+    algorithm = "ollama_embeddings_v1"
+
+    def __init__(self, config: OllamaEmbeddingConfig) -> None:
+        self.config = config
+        self._cache: dict[str, tuple[float, ...]] = {}
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        cached = self._cache.get(text)
+        if cached is not None:
+            return cached
+
+        payload = {
+            "model": self.config.model,
+            "input": text,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/api/embed",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.config.timeout_s) as response:
+                raw = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise EmbeddingError(f"Ollama embeddings request failed: HTTP {exc.code}: {body}") from exc
+        except URLError as exc:
+            raise EmbeddingError(f"Ollama embeddings request failed: {exc}") from exc
+
+        try:
+            embedding = raw["embeddings"][0]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise EmbeddingError(f"Unexpected Ollama embeddings payload: {raw!r}") from exc
+
+        vector = tuple(float(value) for value in embedding)
+        self._cache[text] = vector
+        return vector
+
+
 def embedding_record(text: str, embedder: TextEmbedder | None = None) -> dict[str, object]:
     active = embedder or embedder_from_env()
     vector = list(active.embed(text))
@@ -126,14 +175,41 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def embedder_from_env() -> TextEmbedder:
+    provider = _infer_embedding_provider_from_env()
+    if provider == "hash":
+        return _hash_embedder()
+    if provider == "ollama":
+        base_url = os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL")
+        if not base_url:
+            return _hash_embedder()
+        timeout_s = float(os.getenv("SCHEMALEDGER_OLLAMA_TIMEOUT", "30"))
+        model = os.getenv("SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL") or _detect_ollama_embedding_model(base_url, timeout_s)
+        if not model:
+            return _hash_embedder()
+        return _ollama_embedder(base_url, model, timeout_s)
+
     base_url = os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL")
     if not base_url:
         return _hash_embedder()
     timeout_s = float(os.getenv("SCHEMALEDGER_LM_STUDIO_TIMEOUT", "30"))
-    model = os.getenv("SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL") or _detect_embedding_model(base_url, timeout_s)
+    model = os.getenv("SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL") or _detect_lmstudio_embedding_model(base_url, timeout_s)
     if not model:
         return _hash_embedder()
     return _lmstudio_embedder(base_url, model, timeout_s)
+
+
+def _infer_embedding_provider_from_env() -> str:
+    provider = os.getenv("SCHEMALEDGER_EMBEDDING_PROVIDER", "").strip().casefold()
+    if provider in {"lmstudio", "ollama", "hash"}:
+        return provider
+    llm_provider = os.getenv("SCHEMALEDGER_LLM_PROVIDER", "").strip().casefold()
+    if llm_provider in {"lmstudio", "ollama"}:
+        return llm_provider
+    if os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL"):
+        return "lmstudio"
+    if os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL"):
+        return "ollama"
+    return "hash"
 
 
 @lru_cache(maxsize=1)
@@ -147,7 +223,12 @@ def _lmstudio_embedder(base_url: str, model: str, timeout_s: float) -> LMStudioT
 
 
 @lru_cache(maxsize=8)
-def _detect_embedding_model(base_url: str, timeout_s: float) -> str | None:
+def _ollama_embedder(base_url: str, model: str, timeout_s: float) -> OllamaTextEmbedder:
+    return OllamaTextEmbedder(OllamaEmbeddingConfig(base_url=base_url, model=model, timeout_s=timeout_s))
+
+
+@lru_cache(maxsize=8)
+def _detect_lmstudio_embedding_model(base_url: str, timeout_s: float) -> str | None:
     req = request.Request(
         url=f"{base_url.rstrip('/')}/v1/models",
         headers={"Content-Type": "application/json"},
@@ -168,10 +249,34 @@ def _detect_embedding_model(base_url: str, timeout_s: float) -> str | None:
     return ranked[0] if ranked else None
 
 
+@lru_cache(maxsize=8)
+def _detect_ollama_embedding_model(base_url: str, timeout_s: float) -> str | None:
+    req = request.Request(
+        url=f"{base_url.rstrip('/')}/api/tags",
+        headers={"Content-Type": "application/json"},
+        method="GET",
+    )
+    try:
+        with request.urlopen(req, timeout=timeout_s) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+    models = raw.get("models", [])
+    ranked: list[str] = []
+    for item in models:
+        model_id = str(item.get("model") or item.get("name") or "")
+        lowered = model_id.casefold()
+        if any(token in lowered for token in ("embedding", "embed", "nomic", "bge", "e5", "gte")):
+            ranked.append(model_id)
+    return ranked[0] if ranked else None
+
+
 def clear_embedding_caches() -> None:
     _hash_embedder.cache_clear()
     _lmstudio_embedder.cache_clear()
-    _detect_embedding_model.cache_clear()
+    _ollama_embedder.cache_clear()
+    _detect_lmstudio_embedding_model.cache_clear()
+    _detect_ollama_embedding_model.cache_clear()
 
 
 def _normalize_for_embedding(text: str) -> str:

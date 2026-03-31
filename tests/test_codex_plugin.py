@@ -38,7 +38,10 @@ def test_plugin_mcp_config_uses_repo_local_stdio_server() -> None:
     assert "-m" in server["args"]
     assert "schemaledger.mcp" in server["args"]
     assert server["env"]["PYTHONPATH"] == "../../src:../.."
+    assert server["env"]["SCHEMALEDGER_LLM_PROVIDER"] == "lmstudio"
+    assert server["env"]["SCHEMALEDGER_EMBEDDING_PROVIDER"] == "lmstudio"
     assert server["env"]["SCHEMALEDGER_LM_STUDIO_BASE_URL"] == "http://127.0.0.1:1234"
+    assert server["env"]["SCHEMALEDGER_OLLAMA_BASE_URL"] == "http://127.0.0.1:11434"
     assert server["env"]["SCHEMALEDGER_POSTGRES_DSN"].endswith("/schemaledger_fresh")
 
 
@@ -59,3 +62,4 @@ def test_home_local_installer_script_exists() -> None:
     assert "HOME_PLUGIN_DIR" in content
     assert "marketplace.json" in content
     assert "schemaledger.mcp" in content
+    assert "SCHEMALEDGER_LLM_PROVIDER" in content

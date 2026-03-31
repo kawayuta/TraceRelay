@@ -7,6 +7,8 @@ from unittest.mock import patch
 from schemaledger.embeddings import (
     LMStudioTextEmbedder,
     LMStudioEmbeddingConfig,
+    OllamaEmbeddingConfig,
+    OllamaTextEmbedder,
     clear_embedding_caches,
     embedder_from_env,
 )
@@ -217,3 +219,57 @@ def test_embedder_from_env_auto_detects_lmstudio_embedding_model():
 
     assert getattr(embedder, "algorithm", "") == "lmstudio_embeddings_v1"
     assert vector == (0.4, 0.5)
+
+
+def test_ollama_text_embedder_calls_embeddings_endpoint():
+    client = OllamaTextEmbedder(
+        OllamaEmbeddingConfig(
+            base_url="http://127.0.0.1:11434",
+            model="nomic-embed-text",
+        )
+    )
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        assert req.full_url.endswith("/api/embed")
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "nomic-embed-text"
+        assert payload["input"] == "Google memory query"
+        return _FakeEmbeddingResponse({"embeddings": [[0.9, 0.8, 0.7]]})
+
+    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        vector = client.embed("Google memory query")
+
+    assert vector == (0.9, 0.8, 0.7)
+
+
+def test_embedder_from_env_auto_detects_ollama_embedding_model():
+    clear_embedding_caches()
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        if req.full_url.endswith("/api/tags"):
+            return _FakeEmbeddingResponse(
+                {
+                    "models": [
+                        {"name": "qwen3:latest"},
+                        {"name": "nomic-embed-text:latest"},
+                    ]
+                }
+            )
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "nomic-embed-text:latest"
+        return _FakeEmbeddingResponse({"embeddings": [[0.6, 0.5]]})
+
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_EMBEDDING_PROVIDER": "ollama",
+            "SCHEMALEDGER_OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+        },
+        clear=True,
+    ):
+        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+            embedder = embedder_from_env()
+            vector = embedder.embed("ASPI")
+
+    assert getattr(embedder, "algorithm", "") == "ollama_embeddings_v1"
+    assert vector == (0.6, 0.5)
