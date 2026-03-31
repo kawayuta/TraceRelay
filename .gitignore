@@ -27,3 +27,8 @@ output/
 # Editor / local env
 .env
 .env.*
+.claude/
+.claude.json
+.claude.json.backup
+compose.override.yaml
+*.log

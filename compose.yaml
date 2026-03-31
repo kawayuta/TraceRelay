@@ -15,6 +15,47 @@ services:
       retries: 20
     volumes:
       - schemaledger_postgres_data:/var/lib/postgresql/data
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schemaledger-web
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCHEMALEDGER_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/schemaledger_fresh
+      SCHEMALEDGER_WORKSPACE: /app/workspace
+      SCHEMALEDGER_WEB_HOST: 0.0.0.0
+      SCHEMALEDGER_WEB_PORT: "5080"
+    ports:
+      - "5080:5080"
+    volumes:
+      - ./workspace:/app/workspace
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schemaledger-mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCHEMALEDGER_POSTGRES_DSN: postgresql://postgres:postgres@postgres:5432/schemaledger_fresh
+      SCHEMALEDGER_WORKSPACE: /app/workspace
+      SCHEMALEDGER_MCP_HOST: 0.0.0.0
+      SCHEMALEDGER_MCP_PORT: "5063"
+      SCHEMALEDGER_MCP_TRANSPORT: sse
+      SCHEMALEDGER_LM_STUDIO_BASE_URL: ${SCHEMALEDGER_LM_STUDIO_BASE_URL:-http://host.docker.internal:1234}
+      SCHEMALEDGER_LM_STUDIO_MODEL: ${SCHEMALEDGER_LM_STUDIO_MODEL:-qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine}
+      SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL: ${SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
+    command: ["./scripts/docker_start_mcp.sh"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5064:5063"
+    volumes:
+      - ./workspace:/app/workspace
 
 volumes:
   schemaledger_postgres_data:

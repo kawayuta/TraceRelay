@@ -1,5 +1,12 @@
 # SchemaLedger
 
+[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-0F172A)](#codex-plugin)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-MCP%20Ready-D97706)](#claude-code)
+[![MCP](https://img.shields.io/badge/MCP-FastMCP-2563EB)](#mcp-tools)
+[![LM Studio](https://img.shields.io/badge/LM%20Studio-Connected-10B981)](#lm-studio-setup)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Projected-336791?logo=postgresql&logoColor=white)](#current-working-stack)
+[![Flask UI](https://img.shields.io/badge/Flask-Trace%20UI-000000?logo=flask&logoColor=white)](#public-surfaces)
+
 Task-first, self-evolving schema runtime for local LLM workflows.
 
 SchemaLedger is a local-first system that lets an LLM:
@@ -43,7 +50,7 @@ Every step is persisted as lineage, projected into PostgreSQL, browsable in Flas
 Live-verified in this repository:
 
 - PostgreSQL default DSN: `postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh`
-- MCP transport: `sse` on `127.0.0.1:5063`
+- Docker Compose MCP: `sse` on `127.0.0.1:5064`
 - Web UI: `127.0.0.1:5080`
 - LM Studio model used in live runs: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
 - LM Studio embedding model used in live runs: `text-embedding-nomic-embed-text-v1.5`
@@ -52,6 +59,79 @@ Live-verified in this repository:
 
 - [Public Overview](./docs/PUBLIC_OVERVIEW.md)
 - [Architecture](./docs/ARCHITECTURE.md)
+
+## Codex Plugin
+
+SchemaLedger now ships as a repo-local Codex plugin as well.
+
+- Plugin root: `./plugins/schemaledger`
+- Manifest: `./plugins/schemaledger/.codex-plugin/plugin.json`
+- MCP config: `./plugins/schemaledger/.mcp.json`
+- Marketplace entry: `./.agents/plugins/marketplace.json`
+
+The plugin uses repo-local stdio MCP, not a separate hosted service. Codex can launch SchemaLedger directly through:
+
+```bash
+PYTHONPATH=../../src:../.. uv run --project ../.. python -m schemaledger.mcp \
+  --workspace ../../workspace \
+  --dsn postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh
+```
+
+with LM Studio and PostgreSQL injected through plugin-local environment variables. For the main app stack, the default runtime path is still `docker compose`.
+
+This repo already includes the local marketplace entry Codex expects:
+
+- `./plugins/schemaledger/.codex-plugin/plugin.json`
+- `./plugins/schemaledger/.mcp.json`
+- `./.agents/plugins/marketplace.json`
+
+To install the same plugin home-locally for Codex across repositories:
+
+```bash
+bash ./scripts/install_codex_plugin.sh
+```
+
+That creates:
+
+- `~/plugins/schemaledger`
+- `~/.agents/plugins/marketplace.json`
+
+## Claude Code
+
+SchemaLedger also supports Claude Code through MCP.
+
+- Default Compose endpoint: `http://127.0.0.1:5064/sse`
+
+With `docker compose up -d --build postgres web mcp` running, you can either:
+
+- add a project-scoped root `.mcp.json`
+- or install `schemaledger` into Claude Code user scope
+
+For a user-scoped Claude Code install across repositories:
+
+```bash
+bash ./scripts/install_claude_code_mcp.sh
+```
+
+Manual equivalent:
+
+```bash
+claude mcp add --transport sse --scope user schemaledger http://127.0.0.1:5064/sse
+```
+
+That uses the official Claude Code CLI flow and registers:
+
+- name: `schemaledger`
+- transport: `sse`
+- url: `http://127.0.0.1:5064/sse`
+
+Useful commands:
+
+```bash
+claude mcp list
+claude mcp get schemaledger
+claude mcp remove schemaledger
+```
 
 ## Core Flow
 
@@ -121,21 +201,14 @@ Task Run
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Start LM Studio
 
-```bash
-uv sync
-```
+Run LM Studio locally on `http://127.0.0.1:1234` with:
 
-### 2. Start PostgreSQL
+- chat model: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
+- embedding model: `text-embedding-nomic-embed-text-v1.5`
 
-```bash
-docker compose up -d
-```
-
-This starts PostgreSQL 16 on `127.0.0.1:55432` and creates the `schemaledger_fresh` database.
-
-### 3. Set LM Studio Environment
+If you use custom values, export them before starting Compose:
 
 ```bash
 export SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
@@ -143,36 +216,40 @@ export SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-a
 export SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
 
-### 4. Start the Web UI
+### 2. Start PostgreSQL, Flask, And MCP With Docker Compose
 
 ```bash
-uv run python -m schemaledger.web.server --host 127.0.0.1 --port 5080
+docker compose up -d --build postgres web mcp
 ```
+
+This starts:
+
+- PostgreSQL 16 on `127.0.0.1:55432`
+- Flask Web UI on `http://127.0.0.1:5080`
+- MCP SSE on `http://127.0.0.1:5064/sse`
+
+The web and MCP containers apply the SchemaLedger PostgreSQL schema on boot and reindex the local `./workspace/artifacts.jsonl` file if it exists.
+
+### 3. Check Container Status
+
+```bash
+docker compose ps
+```
+
+### 4. Tail Web And MCP Logs
+
+```bash
+docker compose logs -f web mcp
+```
+
+### 5. Open The Web UI
 
 Open:
 
 - `http://127.0.0.1:5080/tasks`
 - `http://127.0.0.1:5080/memory`
 
-### 5. Start the MCP Server
-
-```bash
-uv run python -m schemaledger.mcp \
-  --transport sse \
-  --workspace ./workspace \
-  --host 127.0.0.1 \
-  --port 5063
-```
-
-This exposes the live MCP server on:
-
-- `http://127.0.0.1:5063/sse`
-
-## LM Studio Setup
-
-### LM Studio Chat
-
-The Chat UI path is live-verified.
+### 6. Connect LM Studio To The Compose MCP Server
 
 Use this `mcp.json` entry:
 
@@ -180,7 +257,79 @@ Use this `mcp.json` entry:
 {
   "mcpServers": {
     "schemaledger": {
-      "url": "http://127.0.0.1:5063/sse"
+      "url": "http://127.0.0.1:5064/sse"
+    }
+  }
+}
+```
+
+### 7. Connect Claude Code To The Compose MCP Server
+
+Project-scoped support uses a root `.mcp.json` like this:
+
+```json
+{
+  "mcpServers": {
+    "schemaledger": {
+      "type": "sse",
+      "url": "${SCHEMALEDGER_CLAUDE_MCP_URL:-http://127.0.0.1:5064/sse}"
+    }
+  }
+}
+```
+
+For cross-project user scope, run:
+
+```bash
+bash ./scripts/install_claude_code_mcp.sh
+```
+
+## Operations
+
+```bash
+docker compose logs -f web mcp
+```
+
+```bash
+docker compose restart web mcp
+```
+
+```bash
+docker compose down
+```
+
+```bash
+docker compose down -v
+```
+
+Use `down -v` only when you intentionally want to drop the PostgreSQL volume as well.
+
+## CLI
+
+The short CLI name is `slg`.
+
+- Correct: `slg`
+- Not used: `sgl`
+
+The containers use `slg` internally. If you need to invoke it manually in the docker-first workflow:
+
+```bash
+docker compose exec web slg db apply-schema --workspace /app/workspace --reindex
+docker compose exec web slg --help
+docker compose exec mcp slg --help
+```
+
+## LM Studio Setup
+
+### LM Studio Chat
+
+The Chat UI path is live-verified.
+
+```json
+{
+  "mcpServers": {
+    "schemaledger": {
+      "url": "http://127.0.0.1:5064/sse"
     }
   }
 }

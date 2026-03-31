@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "schemaledger": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "../..",
+        "python",
+        "-m",
+        "schemaledger.mcp",
+        "--workspace",
+        "../../workspace",
+        "--dsn",
+        "postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh"
+      ],
+      "env": {
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONPATH": "../../src:../..",
+        "SCHEMALEDGER_LM_STUDIO_BASE_URL": "http://127.0.0.1:1234",
+        "SCHEMALEDGER_LM_STUDIO_MODEL": "qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine",
+        "SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5",
+        "SCHEMALEDGER_POSTGRES_DSN": "postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh"
+      },
+      "note": "Repo-local SchemaLedger MCP server. Requires LM Studio on 127.0.0.1:1234 and PostgreSQL from docker compose."
+    }
+  }
+}
