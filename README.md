@@ -22,6 +22,21 @@ SchemaLedger is a local-first system that lets an LLM:
 
 Every step is persisted as lineage, projected into PostgreSQL, browsable in Flask, and exposed through MCP.
 
+## Quick Start
+
+```bash
+cp .env.example .env
+docker compose up -d --build postgres web mcp
+docker compose logs -f web mcp
+```
+
+Then open:
+
+- `http://127.0.0.1:5080/tasks`
+- `http://127.0.0.1:5080/memory`
+
+Default `.env.example` targets LM Studio. If you want Ollama or external embedding APIs, edit `.env` first. Full setup variants are in [Setup Details](#setup-details).
+
 ## What Makes It Strong
 
 - Schema does not have to be fixed up front. The runtime can expand fields and relations during the task.
@@ -158,7 +173,7 @@ Task Run
    └─ repository and API access
 ```
 
-## Quick Start
+## Setup Details
 
 ### 1. Create A Local `.env`
 
