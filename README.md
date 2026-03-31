@@ -81,9 +81,9 @@ xychart-beta
     title "Benchmark Snapshot: Normalized Evaluation Profile"
     x-axis ["Task Success", "Query Quality", "Claim Support", "Token Efficiency", "Long-Task Recall"]
     y-axis "Normalized Score" 0 --> 100
-    line [84, 88, 92, 79, 90]
-    line [74, 76, 84, 61, 78]
-    line [71, 73, 82, 55, 74]
+    bar [84, 88, 92, 79, 90]
+    bar [74, 76, 84, 61, 78]
+    bar [71, 73, 82, 55, 74]
 ```
 
 ### What These Charts Are Meant To Show
