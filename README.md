@@ -1,10 +1,10 @@
 # SchemaLedger
 
-[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-7C3AED)](#plugins-support)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-Supported-7C3AED)](#plugins-support)
-[![MCP](https://img.shields.io/badge/MCP-Supported-2563EB)](#public-surfaces)
-[![LM Studio](https://img.shields.io/badge/LM%20Studio-Supported-10B981)](#lm-studio-setup)
-[![Ollama](https://img.shields.io/badge/Ollama-Supported-10B981)](#ollama-setup)
+[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-7C3AED)](#plugin-support)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code%20Plugin-Supported-7C3AED)](#plugin-support)
+[![MCP Server](https://img.shields.io/badge/MCP%20Server-Supported-2563EB)](#integration-model)
+[![LM Studio Client](https://img.shields.io/badge/LM%20Studio%20Client-Supported-10B981)](#lm-studio-support)
+[![Ollama Backend](https://img.shields.io/badge/Ollama%20Backend-Supported-10B981)](#backend-support)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-336791?logo=postgresql&logoColor=white)](#current-working-stack)
 [![Flask UI](https://img.shields.io/badge/Flask%20UI-Supported-F59E0B?logo=flask&logoColor=white)](#public-surfaces)
 
@@ -45,7 +45,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - It makes schema evolution inspectable. You can trace when the structure changed, why it changed, which candidate was proposed, and which retry finally filled the task.
 - It turns memory into an execution advantage, not just a search feature. Prior subject facts, profile context, and extraction snapshots can flow back into later runs at the right stage of the loop.
 - It makes memory formation observable over time. Subject memory, profile memory, task memory context, and retrieval hits can all be inspected instead of guessed.
-- It is operational, not just experimental. The same runtime is available through Web, PostgreSQL, MCP, Codex, and Claude Code, so people, agents, and systems can all work from the same source of truth.
+- It is operational, not just experimental. The same runtime is available through Web, PostgreSQL, and MCP, and can be reached from Codex, Claude Code, and LM Studio without splitting the source of truth.
 - It stays local-first. You can run the stack with LM Studio or Ollama, keep artifacts in PostgreSQL, inspect everything in Flask, and avoid pushing sensitive workflows into a black-box hosted pipeline.
 
 ## Why It Is Better Than Static Extraction
@@ -57,13 +57,15 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 ## Current Working Stack
 
+- MCP server: official Python `FastMCP`
+- Plugin targets: Codex, Claude Code
+- MCP client support: LM Studio
 - LLM runtime: LM Studio or Ollama
 - Structured extraction: LM Studio `POST /v1/chat/completions` or Ollama `POST /api/chat`
 - Embeddings: LM Studio `POST /v1/embeddings`, Ollama `POST /api/embed`, OpenAI `POST /v1/embeddings`, or Gemini `models.embedContent`
 - Artifact store: JSONL
 - Projection: PostgreSQL
 - Web: Flask
-- MCP: official Python `FastMCP`
 
 Live-verified in this repository:
 
@@ -81,7 +83,17 @@ Live-verified in this repository:
 - [Public Overview](./docs/PUBLIC_OVERVIEW.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 
-## Plugins Support
+## Integration Model
+
+- Codex and Claude Code use SchemaLedger as plugins.
+- LM Studio uses SchemaLedger as an MCP client.
+- Ollama is supported as a runtime and embedding backend, not as an MCP client in this repository.
+- The MCP endpoint is always served by SchemaLedger itself.
+
+## Plugin Support
+
+Codex and Claude Code are supported as plugins.
+LM Studio is not a plugin target here. It connects to the running SchemaLedger MCP server directly.
 
 ### Codex
 
@@ -275,6 +287,8 @@ Open:
 
 ### 7. Connect LM Studio To The Compose MCP Server
 
+LM Studio uses SchemaLedger through MCP, not through a plugin install.
+
 Use this `mcp.json` entry:
 
 ```json
@@ -288,6 +302,8 @@ Use this `mcp.json` entry:
 ```
 
 ### 8. Install The Claude Code Plugin
+
+Claude Code support is provided as an official plugin install, separate from LM Studio's MCP connection.
 
 Run:
 
@@ -332,7 +348,7 @@ docker compose exec web slg --help
 docker compose exec mcp slg --help
 ```
 
-## LM Studio Setup
+## LM Studio Support
 
 ### LM Studio Chat
 
@@ -366,9 +382,15 @@ The OpenAI-compatible structured-output endpoint is:
 
 Important: Chat UI MCP usage is verified. API-side MCP usage may require LM Studio plugin permission settings depending on your local server configuration.
 
-## Ollama Setup
+## Backend Support
 
-SchemaLedger supports Ollama as the runtime/backend behind MCP.
+- LM Studio can act as both an MCP client and a local LLM / embedding backend.
+- Ollama is supported as a local LLM / embedding backend.
+- OpenAI and Gemini are supported for embeddings only.
+
+### Ollama
+
+SchemaLedger supports Ollama as the runtime/backend behind its own MCP server.
 
 - chat backend: `POST /api/chat`
 - embedding backend: `POST /api/embed`
