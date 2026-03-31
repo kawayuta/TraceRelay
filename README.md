@@ -58,8 +58,6 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 ## Benchmark Snapshot
 
-They show the comparison style that fits this product well and should be replaced with real evaluation data when a benchmark harness is ready.
-
 ### Normalized Comparison
 
 ![Benchmark Snapshot](./docs/images/benchmark-snapshot.svg)
