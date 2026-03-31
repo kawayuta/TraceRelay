@@ -62,52 +62,52 @@ They show the comparison style that fits this product well and should be replace
 
 ### Task Success Rate
 
-```text
-Higher is better
-
-SchemaLedger  [##########################################........] 84%
-Claude Code   [#####################################.............] 74%
-Codex         [###################################...............] 71%
+```mermaid
+xychart-beta
+    title "Task Success Rate (%)"
+    x-axis ["SchemaLedger", "Claude Code", "Codex"]
+    y-axis "Percent" 0 --> 100
+    bar [84, 74, 71]
 ```
 
 ### Broad Or Malformed Query Rate
 
-```text
-Lower is better
-
-SchemaLedger  [######............................................] 12%
-Claude Code   [############......................................] 24%
-Codex         [##############....................................] 27%
+```mermaid
+xychart-beta
+    title "Broad Or Malformed Query Rate (%)"
+    x-axis ["SchemaLedger", "Claude Code", "Codex"]
+    y-axis "Percent" 0 --> 30
+    bar [12, 24, 27]
 ```
 
 ### Unsupported Claim Rate
 
-```text
-Lower is better
-
-SchemaLedger  [####..............................................]  8%
-Claude Code   [########..........................................] 16%
-Codex         [#########.........................................] 18%
+```mermaid
+xychart-beta
+    title "Unsupported Claim Rate (%)"
+    x-axis ["SchemaLedger", "Claude Code", "Codex"]
+    y-axis "Percent" 0 --> 20
+    bar [8, 16, 18]
 ```
 
 ### Average Tokens Per Successful Task
 
-```text
-Lower is better
-
-SchemaLedger  [############################......................] 3800
-Claude Code   [####################################..............] 4900
-Codex         [######################################............] 5200
+```mermaid
+xychart-beta
+    title "Average Tokens Per Successful Task"
+    x-axis ["SchemaLedger", "Claude Code", "Codex"]
+    y-axis "Tokens" 0 --> 6000
+    bar [3800, 4900, 5200]
 ```
 
 ### Long-Task Context Forgetting Rate
 
-```text
-Lower is better
-
-SchemaLedger  [#####.............................................] 10%
-Claude Code   [###########.......................................] 22%
-Codex         [#############.....................................] 26%
+```mermaid
+xychart-beta
+    title "Long-Task Context Forgetting Rate (%)"
+    x-axis ["SchemaLedger", "Claude Code", "Codex"]
+    y-axis "Percent" 0 --> 30
+    bar [10, 22, 26]
 ```
 
 ### What These Charts Are Meant To Show
