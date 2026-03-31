@@ -1,0 +1,43 @@
+{% macro render_lines(lines, class_name="compact-list") %}
+  {% if lines %}
+    <ul class="{{ class_name }}">
+      {% for line in lines %}
+        <li>{{ line }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endmacro %}
+
+{% macro render_code_panel(title, code, disclosure_label=None, open=False, panel_class="") %}
+  {% set code_lines = (code or "{}").split("\n") %}
+  {% if disclosure_label %}
+    <details class="code-disclosure {{ panel_class }}" {% if open %}open{% endif %}>
+      <summary>{{ disclosure_label }}</summary>
+      <div class="code-panel top-gap-sm">
+        {% if title %}
+          <div class="code-panel-header">{{ title }}</div>
+        {% endif %}
+        <div class="code-view">
+          <ol class="code-lines">
+            {% for line in code_lines %}
+              <li><code>{{ line if line else " " }}</code></li>
+            {% endfor %}
+          </ol>
+        </div>
+      </div>
+    </details>
+  {% else %}
+    <div class="code-panel {{ panel_class }}">
+      {% if title %}
+        <div class="code-panel-header">{{ title }}</div>
+      {% endif %}
+      <div class="code-view">
+        <ol class="code-lines">
+          {% for line in code_lines %}
+            <li><code>{{ line if line else " " }}</code></li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+  {% endif %}
+{% endmacro %}

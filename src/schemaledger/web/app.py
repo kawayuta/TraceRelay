@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
 import re
 from urllib.parse import quote
 
@@ -14,18 +15,31 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3040-\u30ff\u4e00-\u9fff]+")
 def create_app(repository: TaskBrowseRepository) -> Flask:
     app = Flask(__name__)
 
+    @app.context_processor
+    def inject_shell() -> dict[str, object]:
+        return {"app_shell": build_app_shell(repository)}
+
     @app.get("/")
     @app.get("/tasks")
     def tasks_page() -> object:
-        return render_template("task_list.html", tasks=repository.list_tasks())
+        dashboard = build_task_dashboard(repository)
+        return render_template("task_list.html", tasks=dashboard["tasks"], dashboard=dashboard)
 
     @app.get("/tasks/<task_id>")
     def task_trace_page(task_id: str) -> object:
         try:
+            task = repository.get_task(task_id)
             trace = repository.get_task_trace(task_id)
         except KeyError:
             abort(404)
-        return render_template("task_trace.html", trace=trace)
+        memory_panel = build_task_trace_memory_panel(repository, task_id, trace)
+        operator_view = build_trace_operator_view(task, memory_panel=memory_panel)
+        return render_template(
+            "task_trace.html",
+            trace=trace,
+            memory_panel=memory_panel,
+            operator_view=operator_view,
+        )
 
     @app.get("/memory")
     @app.get("/memory/search")
@@ -192,6 +206,288 @@ def build_memory_search(repository: TaskBrowseRepository, query: str, limit: int
         "limit": limit,
         "strategy": strategy,
         "results": results[:limit],
+    }
+
+
+def build_app_shell(repository: TaskBrowseRepository) -> dict[str, object]:
+    tasks = repository.list_tasks()
+    statuses = Counter(str(task.get("status", "") or "unknown") for task in tasks)
+    memory_docs = len(repository.list_memory_documents())
+    success_rate = round((statuses.get("success", 0) / len(tasks)) * 100) if tasks else 0
+    families = len({str(task.get("family", "")).strip() for task in tasks if str(task.get("family", "")).strip()})
+    return {
+        "stats": [
+            {"label": "runs", "value": len(tasks)},
+            {"label": "success", "value": f"{success_rate}%"},
+            {"label": "families", "value": families},
+            {"label": "memory docs", "value": memory_docs},
+        ],
+        "status_counts": [
+            {"label": "partial", "value": statuses.get("partial", 0)},
+            {"label": "failed", "value": statuses.get("failed", 0)},
+        ],
+        "signals": [
+            "Schema, memory, and retries stay visible in one operating surface.",
+            "Memory remains scoped by subject, profile, and task stage.",
+            "Failures and branch points stay readable before raw artifacts.",
+        ],
+    }
+
+
+def build_task_dashboard(repository: TaskBrowseRepository) -> dict[str, object]:
+    raw_tasks = repository.list_tasks()
+    tasks: list[dict[str, object]] = []
+    statuses: Counter[str] = Counter()
+    families: Counter[str] = Counter()
+    evolved = 0
+    attempts_total = 0
+
+    for task in raw_tasks:
+        task_id = str(task.get("task_id", ""))
+        try:
+            detail = repository.get_task(task_id)
+        except KeyError:
+            detail = {}
+        run = dict(detail.get("run") or {})
+        schema_versions = list(detail.get("schema_versions") or [])
+        extractions = list(detail.get("extractions") or [])
+        coverages = list(detail.get("coverage_reports") or [])
+        latest_coverage = dict(coverages[-1]) if coverages else {}
+        latest_extraction = dict(extractions[-1]) if extractions else {}
+        attempts = int(run.get("attempts") or len(extractions) or 0)
+        schema_rounds = int(run.get("schema_rounds") or max(len(schema_versions) - 1, 0))
+        active_schema = dict(schema_versions[-1]) if schema_versions else {}
+        is_evolved = schema_rounds > 0 or len(schema_versions) > 1
+        if is_evolved:
+            evolved += 1
+        status = str(task.get("status", "") or "unknown")
+        family = str(task.get("family", "") or "")
+        statuses[status] += 1
+        if family:
+            families[family] += 1
+        attempts_total += attempts
+        dominant_issue = str(latest_coverage.get("dominant_issue") or "none")
+        next_action = _task_next_action(run, latest_coverage)
+        queue_state = _queue_state(status, dominant_issue)
+        tasks.append(
+            {
+                **task,
+                "attempts": attempts,
+                "schema_rounds": schema_rounds,
+                "schema_version": active_schema.get("version"),
+                "is_evolved": is_evolved,
+                "prompt_preview": _truncate(str(task.get("prompt", "")), 120),
+                "dominant_issue": dominant_issue,
+                "issue_preview": _coverage_preview(latest_coverage),
+                "next_action": next_action,
+                "queue_state": queue_state,
+                "schema_code": _pretty_json(_schema_code_view(active_schema)) if active_schema else "{}",
+                "latest_key_preview": sorted(dict(latest_extraction.get("payload") or {}).keys())[:8],
+                "branch_summary": _branch_summary_text(run, latest_coverage),
+                "search_text": " ".join(
+                    [
+                        str(task.get("prompt", "")),
+                        str(task.get("resolved_subject", "")),
+                        family,
+                        status,
+                        str(task.get("reason", "")),
+                        dominant_issue,
+                        _coverage_preview(latest_coverage),
+                    ]
+                ).casefold(),
+            }
+        )
+
+    tasks.sort(
+        key=lambda item: (
+            _status_rank(str(item.get("status", "") or "unknown")),
+            int(bool(item.get("is_evolved"))),
+            int(item.get("schema_rounds") or 0),
+            int(item.get("attempts") or 0),
+            str(item.get("task_id", "")),
+        )
+    )
+    memory_docs = len(repository.list_memory_documents())
+    average_attempts = round(attempts_total / len(tasks), 1) if tasks else 0.0
+    success_rate = round((statuses.get("success", 0) / len(tasks)) * 100) if tasks else 0
+    return {
+        "tasks": tasks,
+        "stats": [
+            {"label": "task runs", "value": len(tasks)},
+            {"label": "need review", "value": statuses.get("partial", 0) + statuses.get("failed", 0)},
+            {"label": "schema-evolved", "value": evolved},
+            {"label": "memory docs", "value": memory_docs},
+            {"label": "success rate", "value": f"{success_rate}%"},
+        ],
+        "status_breakdown": [
+            {"label": "success", "value": statuses.get("success", 0)},
+            {"label": "partial", "value": statuses.get("partial", 0)},
+            {"label": "failed", "value": statuses.get("failed", 0)},
+            {"label": "avg attempts", "value": average_attempts},
+        ],
+        "signals": [
+            {
+                "title": "Review first",
+                "text": "Partial and failed runs should be cleared before completed runs.",
+            },
+            {
+                "title": "Trace second",
+                "text": "Every row should tell you the branch reason before you open the trace.",
+            },
+            {
+                "title": "Evidence third",
+                "text": "Schema changes and recalled memory stay separate from the raw ledger.",
+            },
+        ],
+        "filters": {
+            "statuses": sorted(status for status in statuses if status and status != "unknown"),
+            "families": sorted(family for family in families if family),
+        },
+    }
+
+
+def build_task_trace_memory_panel(
+    repository: TaskBrowseRepository,
+    task_id: str,
+    trace: dict[str, object],
+) -> dict[str, object] | None:
+    try:
+        memory_context = repository.get_task_memory_context(task_id)
+    except KeyError:
+        return None
+
+    payload = dict(memory_context.get("payload", {}))
+    resolved_subject = str(trace.get("summary", {}).get("resolved_subject", "") or payload.get("resolved_subject", ""))
+    subject_summary = repository.get_subject_memory(resolved_subject) if resolved_subject else None
+
+    return {
+        "summary": str(memory_context.get("summary", "")),
+        "profile_key": str(memory_context.get("profile_key", "")),
+        "subject_key": str(memory_context.get("subject_key", "")),
+        "family": str(memory_context.get("family", "")),
+        "task_shape": str(payload.get("task_shape", "")),
+        "intent": str(payload.get("intent", "")),
+        "schema_version": payload.get("schema_version"),
+        "schema_id": str(payload.get("schema_id", "")),
+        "facts": _memory_fact_lines(payload),
+        "task_href": f"/memory/tasks/{task_id}",
+        "subject_href": f"/memory/subjects/{quote(resolved_subject, safe='')}" if resolved_subject else "",
+        "related_documents": len(subject_summary.get("memory_documents", [])) if subject_summary else 0,
+        "related_contexts": len(subject_summary.get("task_memory_contexts", [])) if subject_summary else 0,
+        "related_profiles": len(subject_summary.get("profiles", [])) if subject_summary else 0,
+        "evidence": _memory_evidence_items(task_id, subject_summary),
+        "context_code": _pretty_json(
+            {
+                "profile_key": memory_context.get("profile_key"),
+                "subject_key": memory_context.get("subject_key"),
+                "family": memory_context.get("family"),
+                "summary": memory_context.get("summary"),
+                "payload": payload,
+            }
+        ),
+    }
+
+
+def build_trace_operator_view(
+    task: dict[str, object],
+    *,
+    memory_panel: dict[str, object] | None = None,
+) -> dict[str, object]:
+    interpretation = dict(task.get("interpretation") or {})
+    run = dict(task.get("run") or {})
+    extractions = list(task.get("extractions") or [])
+    coverages = list(task.get("coverage_reports") or [])
+    schema_versions = list(task.get("schema_versions") or [])
+    latest_coverage = dict(coverages[-1]) if coverages else {}
+    latest_schema = dict(schema_versions[-1]) if schema_versions else {}
+    latest_extraction = dict(extractions[-1]) if extractions else {}
+
+    attempts: list[dict[str, object]] = []
+    for index, extraction in enumerate(extractions, start=1):
+        payload = dict(extraction.get("payload") or {})
+        coverage = dict(coverages[index - 1]) if index - 1 < len(coverages) else {}
+        attempts.append(
+            {
+                "attempt": int(extraction.get("attempt") or index),
+                "status": str(extraction.get("status") or "unknown"),
+                "schema_version": extraction.get("schema_version"),
+                "returned_keys": len(payload),
+                "reason": str(run.get("reason") or "n/a"),
+                "key_preview": sorted(payload.keys())[:4],
+                "dominant_issue": str(coverage.get("dominant_issue") or "none"),
+                "missing_values": [str(item) for item in coverage.get("missing_values", [])][:3],
+                "missing_fields": [str(item) for item in coverage.get("missing_fields", [])][:3],
+                "missing_relations": [str(item) for item in coverage.get("missing_relations", [])][:3],
+                "next_action": _attempt_next_action(index, extraction, coverage, run, len(extractions)),
+                "payload_code": _pretty_json(payload),
+                "coverage_code": _pretty_json(coverage),
+                "missing_preview": _coverage_preview(coverage) or "none",
+            }
+        )
+
+    schema_deltas: list[dict[str, object]] = []
+    previous_schema: dict[str, object] | None = None
+    for schema in schema_versions:
+        current = dict(schema)
+        schema_deltas.append(_schema_delta(previous_schema, current))
+        previous_schema = current
+
+    dominant_issue = str(latest_coverage.get("dominant_issue") or "none")
+    summary_badges = [
+        {"label": "status", "value": str(run.get("status") or "unknown")},
+        {"label": "reason", "value": str(run.get("reason") or "n/a")},
+        {"label": "dominant issue", "value": dominant_issue},
+        {"label": "family", "value": str(interpretation.get("family") or "n/a")},
+    ]
+    if memory_panel:
+        summary_badges.append({"label": "memory profile", "value": str(memory_panel.get("profile_key") or "workspace")})
+
+    top_cards = [
+        {
+            "label": "Outcome",
+            "value": f"{run.get('status') or 'unknown'} / {run.get('reason') or 'n/a'}",
+            "tone": _tone_for_status(str(run.get("status") or "unknown")),
+            "note": "Final state",
+        },
+        {
+            "label": "Branch",
+            "value": dominant_issue.replace("_", " "),
+            "tone": "schema" if dominant_issue == "schema" else "warning" if dominant_issue == "values" else "neutral",
+            "note": _coverage_preview(latest_coverage) or "No open gap",
+        },
+        {
+            "label": "Schema",
+            "value": f"v{latest_schema.get('version', 'n/a')}",
+            "tone": "schema",
+            "note": f"{len(schema_versions)} version(s), {run.get('schema_rounds') or 0} round(s)",
+        },
+        {
+            "label": "Memory",
+            "value": str(memory_panel.get("subject_key") or "n/a") if memory_panel else "n/a",
+            "tone": "memory",
+            "note": f"{memory_panel.get('related_documents', 0)} related memory doc(s)" if memory_panel else "No recall context",
+        },
+    ]
+
+    return {
+        "summary_badges": summary_badges,
+        "top_cards": top_cards,
+        "why_it_branched": _why_it_branched(run, latest_coverage, latest_schema),
+        "attempts": attempts,
+        "schema_deltas": schema_deltas,
+        "schema_versions": [
+            {
+                "version": schema.get("version"),
+                "family": schema.get("family"),
+                "schema_id": schema.get("schema_id"),
+                "code": _pretty_json(_schema_code_view(schema)),
+            }
+            for schema in schema_versions
+        ],
+        "active_schema_code": _pretty_json(_schema_code_view(latest_schema)) if latest_schema else "{}",
+        "latest_payload_code": _pretty_json(dict(latest_extraction.get("payload") or {})) if latest_extraction else "{}",
+        "has_schema_evolution": len(schema_versions) > 1,
+        "has_memory_evidence": bool(memory_panel and memory_panel.get("evidence")),
     }
 
 
@@ -651,6 +947,225 @@ def _memory_task_card(doc: dict[str, object], href: str) -> dict[str, object]:
     }
 
 
+def _memory_evidence_items(task_id: str, subject_summary: dict[str, object] | None, limit: int = 4) -> list[dict[str, object]]:
+    if not subject_summary:
+        return []
+    evidence: list[dict[str, object]] = []
+    for document in subject_summary.get("memory_documents", []):
+        if str(document.get("task_id", "")) == task_id:
+            continue
+        evidence.append(
+            {
+                "task_id": str(document.get("task_id", "")),
+                "memory_type": str(document.get("memory_type", "memory_document")),
+                "summary": str(document.get("summary", "")),
+                "href": f"/memory/tasks/{document.get('task_id', '')}",
+            }
+        )
+        if len(evidence) >= limit:
+            break
+    return evidence
+
+
+def _attempt_next_action(
+    index: int,
+    extraction: dict[str, object],
+    coverage: dict[str, object],
+    run: dict[str, object],
+    total_attempts: int,
+) -> str:
+    dominant_issue = str(coverage.get("dominant_issue") or "none")
+    if dominant_issue == "values":
+        return "re-extract"
+    if dominant_issue == "schema":
+        return "evolve schema"
+    if index == total_attempts:
+        reason = str(run.get("reason") or "")
+        if reason == "complete":
+            return "complete"
+        if reason:
+            return reason.replace("_", " ")
+    status = str(extraction.get("status") or "")
+    return status or "continue"
+
+
+def _queue_state(status: str, dominant_issue: str) -> str:
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        if dominant_issue == "schema":
+            return "schema"
+        if dominant_issue == "values":
+            return "retry"
+        return "partial"
+    if status == "success":
+        return "complete"
+    return "neutral"
+
+
+def _status_rank(status: str) -> int:
+    order = {"failed": 0, "partial": 1, "success": 2}
+    return order.get(status, 3)
+
+
+def _task_next_action(run: dict[str, object], coverage: dict[str, object]) -> str:
+    dominant_issue = str(coverage.get("dominant_issue") or "none")
+    reason = str(run.get("reason") or "")
+    if dominant_issue == "schema":
+        return "evolve schema"
+    if dominant_issue == "values":
+        return "retry extraction"
+    if reason == "complete":
+        return "stable"
+    if reason:
+        return reason.replace("_", " ")
+    return "review"
+
+
+def _branch_summary_text(run: dict[str, object], coverage: dict[str, object]) -> str:
+    dominant_issue = str(coverage.get("dominant_issue") or "none")
+    preview = _coverage_preview(coverage)
+    if dominant_issue == "schema":
+        return f"Schema gap: {preview or 'structure missing'}"
+    if dominant_issue == "values":
+        return f"Value gap: {preview or 'values missing'}"
+    reason = str(run.get("reason") or "")
+    if reason == "complete":
+        return "Stable outcome"
+    if reason:
+        return reason.replace("_", " ")
+    return "No open branch"
+
+
+def _coverage_preview(coverage: dict[str, object]) -> str:
+    missing_values = [str(item) for item in coverage.get("missing_values", [])]
+    missing_fields = [str(item) for item in coverage.get("missing_fields", [])]
+    missing_relations = [str(item) for item in coverage.get("missing_relations", [])]
+    if missing_values:
+        return ", ".join(missing_values[:2])
+    if missing_fields:
+        return ", ".join(missing_fields[:2])
+    if missing_relations:
+        return ", ".join(missing_relations[:2])
+    return ""
+
+
+def _tone_for_status(status: str) -> str:
+    if status == "success":
+        return "success"
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        return "warning"
+    return "neutral"
+
+
+def _schema_code_view(schema: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_id": schema.get("schema_id"),
+        "family": schema.get("family"),
+        "version": schema.get("version"),
+        "required_fields": schema.get("required_fields", []),
+        "optional_fields": schema.get("optional_fields", []),
+        "relations": schema.get("relations", []),
+        "rationale": schema.get("rationale", ""),
+    }
+
+
+def _why_it_branched(
+    run: dict[str, object],
+    coverage: dict[str, object],
+    schema: dict[str, object],
+) -> list[dict[str, str]]:
+    dominant_issue = str(coverage.get("dominant_issue") or "none")
+    missing_values = [str(item) for item in coverage.get("missing_values", [])]
+    missing_fields = [str(item) for item in coverage.get("missing_fields", [])]
+    missing_relations = [str(item) for item in coverage.get("missing_relations", [])]
+    items = [
+        {"label": "dominant issue", "value": dominant_issue},
+        {"label": "missing values", "value": str(len(missing_values))},
+        {"label": "missing fields", "value": str(len(missing_fields))},
+        {"label": "missing relations", "value": str(len(missing_relations))},
+        {"label": "active schema", "value": f"v{schema.get('version', 'n/a')}"},
+        {"label": "next state", "value": str(run.get("reason") or "n/a").replace("_", " ")},
+    ]
+    if missing_values:
+        items.append({"label": "values gap", "value": ", ".join(missing_values[:2])})
+    elif missing_fields or missing_relations:
+        structural = (missing_fields + missing_relations)[:2]
+        items.append({"label": "structure gap", "value": ", ".join(structural)})
+    return items
+
+
+def _schema_delta(previous: dict[str, object] | None, current: dict[str, object]) -> dict[str, object]:
+    previous_required = set(str(item) for item in (previous or {}).get("required_fields", []))
+    previous_optional = set(str(item) for item in (previous or {}).get("optional_fields", []))
+    previous_relations = set(str(item) for item in (previous or {}).get("relations", []))
+    current_required = [str(item) for item in current.get("required_fields", [])]
+    current_optional = [str(item) for item in current.get("optional_fields", [])]
+    current_relations = [str(item) for item in current.get("relations", [])]
+    return {
+        "version": current.get("version"),
+        "schema_id": str(current.get("schema_id", "")),
+        "family": str(current.get("family", "")),
+        "added_required": [item for item in current_required if item not in previous_required],
+        "added_optional": [item for item in current_optional if item not in previous_optional],
+        "added_relations": [item for item in current_relations if item not in previous_relations],
+        "rationale": str(current.get("rationale", "")),
+    }
+
+
+def _memory_fact_lines(payload: dict[str, object], limit: int = 6) -> list[str]:
+    extractions = payload.get("extractions", [])
+    if not isinstance(extractions, list) or not extractions:
+        return []
+    latest = extractions[-1]
+    if not isinstance(latest, dict):
+        return []
+    extraction_payload = latest.get("payload", {})
+    if not isinstance(extraction_payload, dict):
+        return []
+
+    lines: list[str] = []
+    for key, value in extraction_payload.items():
+        preview = _preview_value(value)
+        if not preview:
+            continue
+        lines.append(f"{key}: {preview}")
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _preview_value(value: object) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, str):
+        return value if len(value) <= 88 else value[:85] + "..."
+    if isinstance(value, (bool, int, float)):
+        return str(value)
+    if isinstance(value, list):
+        parts = []
+        for item in value[:3]:
+            preview = _preview_value(item)
+            if preview:
+                parts.append(preview)
+        if not parts:
+            return ""
+        text = ", ".join(parts)
+        if len(value) > 3:
+            text += f" +{len(value) - 3}"
+        return text
+    if isinstance(value, dict):
+        parts = []
+        for nested_key, nested_value in list(value.items())[:2]:
+            preview = _preview_value(nested_value)
+            if preview:
+                parts.append(f"{nested_key}={preview}")
+        return ", ".join(parts)
+    return str(value)
+
+
 def _unique_task_cards(documents, limit: int) -> list[dict[str, object]]:  # noqa: ANN001
     cards: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -691,6 +1206,10 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 3] + "..."
+
+
+def _pretty_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=False)
 
 
 def _bounded_limit(raw: str, default: int = 8, maximum: int = 20) -> int:

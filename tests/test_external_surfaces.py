@@ -345,7 +345,7 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert len(tasks.get_json()) == 2
     html_index = client.get("/tasks")
     assert html_index.status_code == 200
-    assert "Trace how each task reasoned" in html_index.get_data(as_text=True)
+    assert "Task Dashboard" in html_index.get_data(as_text=True)
     task_detail = client.get(f"/api/tasks/{google.task_id}")
     assert task_detail.status_code == 200
     assert task_detail.get_json()["interpretation"]["family"] == "organization"
@@ -361,8 +361,8 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     trace_page = client.get(f"/tasks/{google.task_id}")
     assert trace_page.status_code == 200
     trace_html = trace_page.get_data(as_text=True)
-    assert "Evolution Flowchart" in trace_html
-    assert "Decision Tree" in trace_html
+    assert "Execution tree" in trace_html
+    assert "Artifact Ledger" in trace_html
     assert "Google" in trace_html
 
     server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)

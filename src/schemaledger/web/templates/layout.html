@@ -3,495 +3,95 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}SchemaLedger Trace{% endblock %}</title>
-    <style>
-      :root {
-        --bg: #f5efe2;
-        --panel: rgba(255, 251, 245, 0.92);
-        --panel-strong: rgba(250, 241, 227, 0.96);
-        --ink: #1e2520;
-        --muted: #5b655d;
-        --line: rgba(47, 62, 52, 0.16);
-        --input: #8d5b2d;
-        --decision: #355c7d;
-        --schema: #29675f;
-        --extraction: #b24c2e;
-        --outcome: #533b8d;
-        --success: #236c4b;
-        --warning: #9c5324;
-        --neutral: #4f5a54;
-        --shadow: 0 18px 55px rgba(45, 39, 30, 0.12);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at top left, rgba(177, 98, 42, 0.18), transparent 28rem),
-          radial-gradient(circle at top right, rgba(53, 92, 125, 0.14), transparent 24rem),
-          linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
-        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
-      }
-
-      body::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        background-image:
-          linear-gradient(rgba(46, 58, 50, 0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(46, 58, 50, 0.03) 1px, transparent 1px);
-        background-size: 32px 32px;
-        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent);
-      }
-
-      a {
-        color: inherit;
-      }
-
-      .page {
-        width: min(1180px, calc(100vw - 2rem));
-        margin: 0 auto;
-        padding: 1.25rem 0 3rem;
-      }
-
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-      }
-
-      .brand {
-        text-decoration: none;
-        color: var(--ink);
-      }
-
-      .nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.55rem;
-      }
-
-      .nav a {
-        text-decoration: none;
-        color: var(--ink);
-        padding: 0.45rem 0.75rem;
-        border-radius: 999px;
-        border: 1px solid rgba(43, 54, 47, 0.12);
-        background: rgba(255, 255, 255, 0.66);
-        font-size: 0.9rem;
-      }
-
-      .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        font-size: 0.74rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .eyebrow::before {
-        content: "";
-        width: 0.8rem;
-        height: 0.8rem;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--decision), var(--schema));
-        box-shadow: 0 0 0 0.2rem rgba(53, 92, 125, 0.12);
-      }
-
-      h1, h2, h3, h4, h5 {
-        margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", serif;
-        font-weight: 600;
-      }
-
-      p {
-        margin: 0;
-        line-height: 1.55;
-      }
-
-      .hero,
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 1.5rem;
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(10px);
-      }
-
-      .hero {
-        padding: 1.35rem;
-      }
-
-      .hero h1 {
-        font-size: clamp(2rem, 5vw, 3.4rem);
-        line-height: 0.94;
-        margin-top: 0.7rem;
-      }
-
-      .hero p {
-        color: var(--muted);
-        margin-top: 0.85rem;
-        max-width: 72ch;
-      }
-
-      .meta-row,
-      .chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.65rem;
-        margin-top: 1rem;
-      }
-
-      .chip,
-      .stat {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: 999px;
-        border: 1px solid rgba(40, 46, 42, 0.11);
-        background: rgba(255, 255, 255, 0.66);
-        font-size: 0.88rem;
-      }
-
-      .chip strong,
-      .stat strong {
-        font-weight: 700;
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(12, minmax(0, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
-      }
-
-      .col-span-4 {
-        grid-column: span 4;
-      }
-
-      .col-span-5 {
-        grid-column: span 5;
-      }
-
-      .col-span-7 {
-        grid-column: span 7;
-      }
-
-      .col-span-8 {
-        grid-column: span 8;
-      }
-
-      .col-span-12 {
-        grid-column: span 12;
-      }
-
-      .panel {
-        padding: 1.15rem;
-      }
-
-      .section-title {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        gap: 1rem;
-        margin-bottom: 1rem;
-      }
-
-      .section-title p {
-        color: var(--muted);
-        font-size: 0.96rem;
-      }
-
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 0.9rem;
-      }
-
-      .memory-search {
-        display: flex;
-        gap: 0.7rem;
-        margin-top: 1rem;
-        flex-wrap: wrap;
-      }
-
-      .memory-search input,
-      .memory-search select {
-        flex: 1 1 18rem;
-        min-width: 0;
-        padding: 0.9rem 1rem;
-        border-radius: 999px;
-        border: 1px solid rgba(43, 54, 47, 0.16);
-        background: rgba(255, 255, 255, 0.78);
-        color: var(--ink);
-        font: inherit;
-      }
-
-      .memory-search button {
-        padding: 0.9rem 1.1rem;
-        border: 0;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--decision), var(--schema));
-        color: white;
-        font: inherit;
-        cursor: pointer;
-      }
-
-      .memory-lines {
-        margin: 0.75rem 0 0;
-        padding-left: 1rem;
-        color: var(--muted);
-      }
-
-      .memory-lines li + li {
-        margin-top: 0.28rem;
-      }
-
-      .memory-card {
-        position: relative;
-      }
-
-      .memory-card .status-pill {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-      }
-
-      .memory-card h3 {
-        margin-top: 1.85rem;
-      }
-
-      .memory-card .chip-row {
-        margin-top: 0.85rem;
-      }
-
-      .memory-card .memory-snippets {
-        margin: 0.7rem 0 0;
-        padding-left: 1rem;
-        color: var(--muted);
-        font-size: 0.94rem;
-      }
-
-      .memory-card .memory-snippets li + li {
-        margin-top: 0.25rem;
-      }
-
-      .task-card,
-      .schema-card,
-      .node-card,
-      .tree-node {
-        border-radius: 1.2rem;
-        border: 1px solid rgba(43, 54, 47, 0.12);
-        background: var(--panel-strong);
-      }
-
-      .task-card {
-        display: block;
-        text-decoration: none;
-        padding: 1rem;
-        transition: transform 180ms ease, box-shadow 180ms ease;
-      }
-
-      .task-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 14px 30px rgba(48, 42, 34, 0.12);
-      }
-
-      .task-card p {
-        color: var(--muted);
-        margin-top: 0.55rem;
-      }
-
-      .status-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.35rem 0.65rem;
-        border-radius: 999px;
-        font-size: 0.82rem;
-        background: rgba(255, 255, 255, 0.74);
-      }
-
-      .status-success {
-        color: var(--success);
-      }
-
-      .status-partial,
-      .status-warning {
-        color: var(--warning);
-      }
-
-      .schema-lineage {
-        display: grid;
-        gap: 0.8rem;
-      }
-
-      .schema-card {
-        padding: 0.95rem;
-      }
-
-      .schema-card p {
-        color: var(--muted);
-        margin-top: 0.35rem;
-      }
-
-      .flowchart {
-        display: grid;
-        gap: 0.75rem;
-      }
-
-      .node-card {
-        position: relative;
-        padding: 1rem 1rem 1rem 1.15rem;
-        border-left: 0.45rem solid var(--neutral);
-      }
-
-      .node-card[data-lane="input"] {
-        border-left-color: var(--input);
-      }
-
-      .node-card[data-lane="decision"] {
-        border-left-color: var(--decision);
-      }
-
-      .node-card[data-lane="schema"] {
-        border-left-color: var(--schema);
-      }
-
-      .node-card[data-lane="extraction"] {
-        border-left-color: var(--extraction);
-      }
-
-      .node-card[data-lane="outcome"] {
-        border-left-color: var(--outcome);
-      }
-
-      .node-kicker {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.75rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .node-card h3 {
-        margin-top: 0.45rem;
-        font-size: 1.25rem;
-      }
-
-      .node-card p {
-        margin-top: 0.35rem;
-        color: var(--muted);
-      }
-
-      .node-card ul {
-        margin: 0.75rem 0 0;
-        padding-left: 1rem;
-        color: var(--ink);
-      }
-
-      .node-card li + li {
-        margin-top: 0.28rem;
-      }
-
-      .flow-arrow {
-        display: flex;
-        align-items: center;
-        gap: 0.7rem;
-        margin-left: 1.3rem;
-        color: var(--muted);
-        font-size: 0.85rem;
-      }
-
-      .flow-arrow::before {
-        content: "";
-        width: 2px;
-        height: 1.4rem;
-        background: linear-gradient(180deg, rgba(53, 92, 125, 0.12), rgba(53, 92, 125, 0.55));
-      }
-
-      .tree {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-      }
-
-      .tree > li + li {
-        margin-top: 0.8rem;
-      }
-
-      .tree-children {
-        list-style: none;
-        margin: 0.9rem 0 0 0.6rem;
-        padding-left: 1rem;
-        border-left: 2px solid rgba(53, 92, 125, 0.16);
-      }
-
-      .tree-children > li + li {
-        margin-top: 0.75rem;
-      }
-
-      .tree-node {
-        padding: 0.9rem 0.95rem;
-      }
-
-      .tree-node ul {
-        margin: 0.7rem 0 0;
-        padding-left: 1rem;
-        color: var(--muted);
-      }
-
-      .tree-node li + li {
-        margin-top: 0.28rem;
-      }
-
-      .empty {
-        padding: 1.4rem;
-        text-align: center;
-        color: var(--muted);
-      }
-
-      @media (max-width: 900px) {
-        .col-span-4,
-        .col-span-5,
-        .col-span-7,
-        .col-span-8,
-        .col-span-12 {
-          grid-column: span 12;
-        }
-
-        .topbar,
-        .section-title {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-      }
-    </style>
+    <title>{% block title %}SchemaLedger{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
   </head>
   <body>
-    <div class="page">
-      <div class="topbar">
-        <a class="brand" href="/tasks">
-          <span class="eyebrow">SchemaLedger Trace</span>
+    <div class="shell">
+      <aside class="shell-sidebar">
+        <a class="sidebar-brand" href="/tasks">
+          <span class="sidebar-brand-mark" aria-hidden="true"></span>
+          <span class="sidebar-brand-copy">
+            <span class="sidebar-brand-title">SchemaLedger</span>
+            <span class="sidebar-brand-subtitle">Schema runtime</span>
+          </span>
         </a>
-        <nav class="nav" aria-label="Primary">
-          <a href="/tasks">Tasks</a>
-          <a href="/memory">Memory</a>
+
+        <nav class="sidebar-nav" aria-label="Primary">
+          <a class="sidebar-nav-link" href="/tasks">
+            <span class="sidebar-nav-label">Task Dashboard</span>
+            <span class="sidebar-nav-meta">Queue</span>
+          </a>
+          <a class="sidebar-nav-link" href="/memory">
+            <span class="sidebar-nav-label">Memory Browser</span>
+            <span class="sidebar-nav-meta">Recall</span>
+          </a>
         </nav>
-      </div>
-      {% block content %}{% endblock %}
+
+        <section class="sidebar-rail">
+          <div class="sidebar-panel-label">Workspace</div>
+          <div class="sidebar-stack">
+            {% for stat in app_shell.stats %}
+              <div class="sidebar-metric">
+                <span>{{ stat.label }}</span>
+                <strong>{{ stat.value }}</strong>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="sidebar-footnote">
+          <div class="sidebar-panel-label">Attention</div>
+          <div class="sidebar-stack">
+            {% for stat in app_shell.status_counts %}
+              <div class="sidebar-metric">
+                <span>{{ stat.label }}</span>
+                <strong>{{ stat.value }}</strong>
+              </div>
+            {% endfor %}
+          </div>
+          <p>{{ app_shell.signals[0] }}</p>
+        </section>
+      </aside>
+
+      <main class="shell-main">
+        <section class="page-utility-bar surface">
+          <div class="page-utility-copy">
+            <div class="page-breadcrumbs">
+              {% block page_breadcrumbs %}
+                <a href="/tasks">Runtime</a>
+                <span>/</span>
+                <span>Overview</span>
+              {% endblock %}
+            </div>
+            <div class="page-utility-note">{{ app_shell.signals[0] }}</div>
+          </div>
+          <div class="page-utility-chips">
+            {% for stat in app_shell.stats %}
+              <span class="table-chip utility-chip"><strong>{{ stat.label }}</strong> {{ stat.value }}</span>
+            {% endfor %}
+          </div>
+        </section>
+
+        <header class="page-header">
+          <div class="page-header-copy">
+            {% block page_kicker %}{% endblock %}
+            <h1 class="page-title">{% block page_title %}SchemaLedger{% endblock %}</h1>
+            <p class="page-intro">{% block page_intro %}{% endblock %}</p>
+          </div>
+          <div class="page-actions">
+            {% block page_actions %}{% endblock %}
+          </div>
+        </header>
+
+        <div class="page-content">
+          {% block content %}{% endblock %}
+        </div>
+      </main>
     </div>
   </body>
 </html>
