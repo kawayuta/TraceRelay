@@ -18,10 +18,10 @@ It creates:
 Run:
 
 ```bash
-bash ./scripts/install_claude_code_mcp.sh
+bash ./scripts/install_claude_code_plugin.sh
 ```
 
-It registers:
+It installs:
 
-- `schemaledger` in Claude Code user scope
-- `~/.claude.json` updated through the Claude CLI
+- local marketplace: `schemaledger-local`
+- plugin: `schemaledger`

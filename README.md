@@ -39,12 +39,14 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 ## What Makes It Strong
 
-- Schema does not have to be fixed up front. The runtime can expand fields and relations during the task.
-- The runtime is traceable. Interpretation, extraction, coverage, schema gaps, schema candidates, reviews, and final status are all persisted as artifacts.
-- Memory is built into the same runtime, not bolted on separately. Prior tasks, subject memory, profile memory, and extraction snapshots can be recalled into later tasks.
-- The same core logic backs Web, PostgreSQL, and MCP. You are not maintaining three different products with drift.
-- It runs local-first with LM Studio or Ollama, PostgreSQL, and FastMCP. That is useful when privacy, controllability, and inspectability matter more than closed hosted pipelines.
-- The active runtime is LLM-first. There is no heuristic family fallback in the execution path.
+- It does not force you to know the final schema up front. SchemaLedger can add fields and relations while the task is running, then immediately re-extract against the updated structure.
+- It keeps memory scoped to the work you are actually doing. Daily tasks, deep research, and coding investigations do not have to share one noisy global memory pool.
+- It shows its work. Interpretation, extraction, coverage, schema evolution, retries, and final outcomes are persisted as lineage instead of disappearing behind a single response.
+- It makes schema evolution inspectable. You can trace when the structure changed, why it changed, which candidate was proposed, and which retry finally filled the task.
+- It turns memory into an execution advantage, not just a search feature. Prior subject facts, profile context, and extraction snapshots can flow back into later runs at the right stage of the loop.
+- It makes memory formation observable over time. Subject memory, profile memory, task memory context, and retrieval hits can all be inspected instead of guessed.
+- It is operational, not just experimental. The same runtime is available through Web, PostgreSQL, MCP, Codex, and Claude Code, so people, agents, and systems can all work from the same source of truth.
+- It stays local-first. You can run the stack with LM Studio or Ollama, keep artifacts in PostgreSQL, inspect everything in Flask, and avoid pushing sensitive workflows into a black-box hosted pipeline.
 
 ## Why It Is Better Than Static Extraction
 
@@ -99,13 +101,13 @@ It creates:
 Run:
 
 ```bash
-bash ./scripts/install_claude_code_mcp.sh
+bash ./scripts/install_claude_code_plugin.sh
 ```
 
-It registers:
+It installs:
 
-- `schemaledger` in Claude Code user scope
-- `~/.claude.json` updated through the Claude CLI
+- local marketplace: `schemaledger-local`
+- plugin: `schemaledger`
 
 ## Core Flow
 
@@ -285,26 +287,15 @@ Use this `mcp.json` entry:
 }
 ```
 
-### 8. Connect Claude Code To The Compose MCP Server
+### 8. Install The Claude Code Plugin
 
-Project-scoped support uses a root `.mcp.json` like this:
-
-```json
-{
-  "mcpServers": {
-    "schemaledger": {
-      "type": "sse",
-      "url": "${SCHEMALEDGER_CLAUDE_MCP_URL:-http://127.0.0.1:5064/sse}"
-    }
-  }
-}
-```
-
-For cross-project user scope, run:
+Run:
 
 ```bash
-bash ./scripts/install_claude_code_mcp.sh
+bash ./scripts/install_claude_code_plugin.sh
 ```
+
+This installs the `schemaledger` plugin from the local `schemaledger-local` marketplace.
 
 ## Operations
 
