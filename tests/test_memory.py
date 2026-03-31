@@ -5,8 +5,13 @@ import os
 from unittest.mock import patch
 
 from schemaledger.embeddings import (
+    EmbeddingError,
+    GeminiEmbeddingConfig,
+    GeminiTextEmbedder,
     LMStudioTextEmbedder,
     LMStudioEmbeddingConfig,
+    OpenAIEmbeddingConfig,
+    OpenAITextEmbedder,
     OllamaEmbeddingConfig,
     OllamaTextEmbedder,
     clear_embedding_caches,
@@ -273,3 +278,114 @@ def test_embedder_from_env_auto_detects_ollama_embedding_model():
 
     assert getattr(embedder, "algorithm", "") == "ollama_embeddings_v1"
     assert vector == (0.6, 0.5)
+
+
+def test_openai_text_embedder_calls_embeddings_endpoint():
+    client = OpenAITextEmbedder(
+        OpenAIEmbeddingConfig(
+            api_key="sk-test",
+            model="text-embedding-3-small",
+        )
+    )
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        assert req.full_url.endswith("/v1/embeddings")
+        assert req.headers["Authorization"] == "Bearer sk-test"
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "text-embedding-3-small"
+        assert payload["input"] == "Google memory query"
+        return _FakeEmbeddingResponse({"data": [{"embedding": [0.11, 0.22, 0.33]}]})
+
+    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        vector = client.embed("Google memory query")
+
+    assert vector == (0.11, 0.22, 0.33)
+
+
+def test_embedder_from_env_selects_openai():
+    clear_embedding_caches()
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "text-embedding-3-small"
+        return _FakeEmbeddingResponse({"data": [{"embedding": [0.12, 0.34]}]})
+
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_EMBEDDING_PROVIDER": "openai",
+            "SCHEMALEDGER_OPENAI_API_KEY": "sk-test",
+            "SCHEMALEDGER_OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
+        },
+        clear=True,
+    ):
+        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+            embedder = embedder_from_env()
+            vector = embedder.embed("ASPI")
+
+    assert getattr(embedder, "algorithm", "") == "openai_embeddings_v1"
+    assert vector == (0.12, 0.34)
+
+
+def test_gemini_text_embedder_calls_embeddings_endpoint():
+    client = GeminiTextEmbedder(
+        GeminiEmbeddingConfig(
+            api_key="gem-key",
+            model="gemini-embedding-001",
+        )
+    )
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        assert "/v1beta/models/gemini-embedding-001:embedContent" in req.full_url
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "models/gemini-embedding-001"
+        assert payload["content"]["parts"][0]["text"] == "Google memory query"
+        return _FakeEmbeddingResponse({"embedding": {"values": [0.21, 0.31, 0.41]}})
+
+    with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+        vector = client.embed("Google memory query")
+
+    assert vector == (0.21, 0.31, 0.41)
+
+
+def test_embedder_from_env_selects_gemini():
+    clear_embedding_caches()
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "models/gemini-embedding-001"
+        return _FakeEmbeddingResponse({"embedding": {"values": [0.56, 0.78]}})
+
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_EMBEDDING_PROVIDER": "gemini",
+            "SCHEMALEDGER_GEMINI_API_KEY": "gem-key",
+            "SCHEMALEDGER_GEMINI_EMBEDDING_MODEL": "gemini-embedding-001",
+        },
+        clear=True,
+    ):
+        with patch("schemaledger.embeddings.request.urlopen", fake_urlopen):
+            embedder = embedder_from_env()
+            vector = embedder.embed("ASPI")
+
+    assert getattr(embedder, "algorithm", "") == "gemini_embeddings_v1"
+    assert vector == (0.56, 0.78)
+
+
+def test_embedder_from_env_rejects_claude_embedding_provider():
+    clear_embedding_caches()
+
+    with patch.dict(
+        os.environ,
+        {
+            "SCHEMALEDGER_EMBEDDING_PROVIDER": "claude",
+        },
+        clear=True,
+    ):
+        try:
+            embedder_from_env()
+        except EmbeddingError as exc:
+            assert "does not currently expose a direct embeddings API" in str(exc)
+        else:
+            raise AssertionError("Expected claude embedding provider to raise EmbeddingError")

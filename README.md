@@ -42,7 +42,7 @@ Every step is persisted as lineage, projected into PostgreSQL, browsable in Flas
 
 - LLM runtime: LM Studio or Ollama
 - Structured extraction: LM Studio `POST /v1/chat/completions` or Ollama `POST /api/chat`
-- Embeddings: LM Studio `POST /v1/embeddings` or Ollama `POST /api/embed`
+- Embeddings: LM Studio `POST /v1/embeddings`, Ollama `POST /api/embed`, OpenAI `POST /v1/embeddings`, or Gemini `models.embedContent`
 - Artifact store: JSONL
 - Projection: PostgreSQL
 - Web: Flask
@@ -56,6 +56,8 @@ Live-verified in this repository:
 - LM Studio model used in live runs: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
 - LM Studio embedding model used in live runs: `text-embedding-nomic-embed-text-v1.5`
 - Ollama backend: supported through `SCHEMALEDGER_LLM_PROVIDER=ollama`
+- Embedding backends: `lmstudio`, `ollama`, `openai`, `gemini`, `hash`
+- Configuration template: `.env.example`
 
 ## Public Docs
 
@@ -203,40 +205,70 @@ Task Run
 
 ## Quick Start
 
-### 1. Choose An LLM Backend
+### 1. Create A Local `.env`
 
-SchemaLedger now supports either LM Studio or Ollama for the MCP/runtime backend.
+```bash
+cp .env.example .env
+```
 
-#### Option A. LM Studio
+`docker compose` reads `.env` automatically. The checked-in defaults target LM Studio for chat and embeddings.
+
+### 2. Choose Your Runtime / Embedding Backend
+
+Edit `.env` and pick one of these common setups.
+
+#### Default: LM Studio For Both
 
 Run LM Studio locally on `http://127.0.0.1:1234` with:
 
 - chat model: `qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine`
 - embedding model: `text-embedding-nomic-embed-text-v1.5`
 
-If you use custom values, export them before starting Compose:
-
 ```bash
-export SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
-export SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
-export SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+SCHEMALEDGER_LLM_PROVIDER=lmstudio
+SCHEMALEDGER_EMBEDDING_PROVIDER=
+SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+SCHEMALEDGER_LM_STUDIO_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
 
-#### Option B. Ollama
+#### Ollama For Both
 
-Run Ollama locally on `http://127.0.0.1:11434`, make sure your selected chat and embedding models are already available, then export:
+Run Ollama locally on `http://127.0.0.1:11434`, make sure your selected chat and embedding models are already available, then set:
 
 ```bash
-export SCHEMALEDGER_LLM_PROVIDER=ollama
-export SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
-export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
-export SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
-export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
+SCHEMALEDGER_LLM_PROVIDER=ollama
+SCHEMALEDGER_EMBEDDING_PROVIDER=ollama
+SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
+SCHEMALEDGER_OLLAMA_MODEL=qwen3:latest
+SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 ```
 
-If you do not set `SCHEMALEDGER_EMBEDDING_PROVIDER`, it follows the active LLM provider by default.
+#### LM Studio Chat + OpenAI Embeddings
 
-### 2. Start PostgreSQL, Flask, And MCP With Docker Compose
+```bash
+SCHEMALEDGER_LLM_PROVIDER=lmstudio
+SCHEMALEDGER_EMBEDDING_PROVIDER=openai
+SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+SCHEMALEDGER_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+#### LM Studio Chat + Gemini Embeddings
+
+```bash
+SCHEMALEDGER_LLM_PROVIDER=lmstudio
+SCHEMALEDGER_EMBEDDING_PROVIDER=gemini
+SCHEMALEDGER_LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+SCHEMALEDGER_LM_STUDIO_MODEL=qwen3.5-35b-a3b-uncensored-claude-opus-4.6-affine
+SCHEMALEDGER_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+```
+
+If `SCHEMALEDGER_EMBEDDING_PROVIDER` is empty, SchemaLedger follows `SCHEMALEDGER_LLM_PROVIDER`.
+
+### 3. Start PostgreSQL, Flask, And MCP With Docker Compose
 
 ```bash
 docker compose up -d --build postgres web mcp
@@ -250,26 +282,26 @@ This starts:
 
 The web and MCP containers apply the SchemaLedger PostgreSQL schema on boot and reindex the local `./workspace/artifacts.jsonl` file if it exists.
 
-### 3. Check Container Status
+### 4. Check Container Status
 
 ```bash
 docker compose ps
 ```
 
-### 4. Tail Web And MCP Logs
+### 5. Tail Web And MCP Logs
 
 ```bash
 docker compose logs -f web mcp
 ```
 
-### 5. Open The Web UI
+### 6. Open The Web UI
 
 Open:
 
 - `http://127.0.0.1:5080/tasks`
 - `http://127.0.0.1:5080/memory`
 
-### 6. Connect LM Studio To The Compose MCP Server
+### 7. Connect LM Studio To The Compose MCP Server
 
 Use this `mcp.json` entry:
 
@@ -283,7 +315,7 @@ Use this `mcp.json` entry:
 }
 ```
 
-### 7. Connect Claude Code To The Compose MCP Server
+### 8. Connect Claude Code To The Compose MCP Server
 
 Project-scoped support uses a root `.mcp.json` like this:
 
@@ -402,6 +434,40 @@ export SCHEMALEDGER_OLLAMA_BASE_URL=http://127.0.0.1:11434
 export SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest
 ```
 
+## Embedding Provider Setup
+
+Embedding selection is fully env-driven.
+
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=lmstudio`
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama`
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=openai`
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=gemini`
+- `SCHEMALEDGER_EMBEDDING_PROVIDER=hash`
+
+If `SCHEMALEDGER_EMBEDDING_PROVIDER` is unset, SchemaLedger follows `SCHEMALEDGER_LLM_PROVIDER` first, then falls back to whatever local backend is configured.
+
+### OpenAI Embeddings
+
+```bash
+export SCHEMALEDGER_EMBEDDING_PROVIDER=openai
+export SCHEMALEDGER_OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+export SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+export SCHEMALEDGER_OPENAI_BASE_URL=https://api.openai.com
+```
+
+### Gemini Embeddings
+
+```bash
+export SCHEMALEDGER_EMBEDDING_PROVIDER=gemini
+export SCHEMALEDGER_GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+export SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+export SCHEMALEDGER_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+```
+
+### Claude / Anthropic Note
+
+`SCHEMALEDGER_EMBEDDING_PROVIDER=claude` or `anthropic` is intentionally rejected. Anthropic does not currently expose a direct embeddings API, so SchemaLedger fails fast instead of pretending to support it.
+
 ## Public Surfaces
 
 ### Flask Pages
@@ -464,7 +530,7 @@ SchemaLedger currently supports:
 - automatic retrieval of prior extraction results into later tasks,
 - subject-level recall such as “what did we learn about ASPI last time?”.
 
-The active embedding backend can be LM Studio or Ollama. Offline hash fallback remains available for development when no live embedding provider is configured.
+The active embedding backend can be LM Studio, Ollama, OpenAI, Gemini, or the offline hash fallback.
 
 ## Persistence Model
 
@@ -513,7 +579,7 @@ Run the test suite:
 env PYTHONNOUSERSITE=1 uv run pytest -q
 ```
 
-Current passing status in this workspace: `44 passed`.
+Current passing status in this workspace: `49 passed`.
 
 ## Status
 

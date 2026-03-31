@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Protocol
-from urllib import request
+from urllib import parse, request
 from urllib.error import HTTPError, URLError
 
 
@@ -34,6 +34,22 @@ class LMStudioEmbeddingConfig:
 class OllamaEmbeddingConfig:
     base_url: str
     model: str
+    timeout_s: float = 30.0
+
+
+@dataclass(frozen=True)
+class OpenAIEmbeddingConfig:
+    api_key: str
+    model: str
+    base_url: str = "https://api.openai.com"
+    timeout_s: float = 30.0
+
+
+@dataclass(frozen=True)
+class GeminiEmbeddingConfig:
+    api_key: str
+    model: str
+    base_url: str = "https://generativelanguage.googleapis.com"
     timeout_s: float = 30.0
 
 
@@ -143,6 +159,98 @@ class OllamaTextEmbedder:
         return vector
 
 
+class OpenAITextEmbedder:
+    algorithm = "openai_embeddings_v1"
+
+    def __init__(self, config: OpenAIEmbeddingConfig) -> None:
+        self.config = config
+        self._cache: dict[str, tuple[float, ...]] = {}
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        cached = self._cache.get(text)
+        if cached is not None:
+            return cached
+
+        payload = {
+            "model": self.config.model,
+            "input": text,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/v1/embeddings",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.config.timeout_s) as response:
+                raw = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise EmbeddingError(f"OpenAI embeddings request failed: HTTP {exc.code}: {body}") from exc
+        except URLError as exc:
+            raise EmbeddingError(f"OpenAI embeddings request failed: {exc}") from exc
+
+        try:
+            embedding = raw["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise EmbeddingError(f"Unexpected OpenAI embeddings payload: {raw!r}") from exc
+
+        vector = tuple(float(value) for value in embedding)
+        self._cache[text] = vector
+        return vector
+
+
+class GeminiTextEmbedder:
+    algorithm = "gemini_embeddings_v1"
+
+    def __init__(self, config: GeminiEmbeddingConfig) -> None:
+        self.config = config
+        self._cache: dict[str, tuple[float, ...]] = {}
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        cached = self._cache.get(text)
+        if cached is not None:
+            return cached
+
+        model_name = _gemini_model_resource(self.config.model)
+        payload = {
+            "model": model_name,
+            "content": {
+                "parts": [{"text": text}],
+            },
+            "taskType": "RETRIEVAL_QUERY",
+        }
+        body = json.dumps(payload).encode("utf-8")
+        query = parse.urlencode({"key": self.config.api_key})
+        req = request.Request(
+            url=f"{self.config.base_url.rstrip('/')}/v1beta/{model_name}:embedContent?{query}",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.config.timeout_s) as response:
+                raw = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise EmbeddingError(f"Gemini embeddings request failed: HTTP {exc.code}: {body}") from exc
+        except URLError as exc:
+            raise EmbeddingError(f"Gemini embeddings request failed: {exc}") from exc
+
+        try:
+            embedding = raw["embedding"]["values"]
+        except (KeyError, TypeError) as exc:
+            raise EmbeddingError(f"Unexpected Gemini embeddings payload: {raw!r}") from exc
+
+        vector = tuple(float(value) for value in embedding)
+        self._cache[text] = vector
+        return vector
+
+
 def embedding_record(text: str, embedder: TextEmbedder | None = None) -> dict[str, object]:
     active = embedder or embedder_from_env()
     vector = list(active.embed(text))
@@ -175,9 +283,43 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def embedder_from_env() -> TextEmbedder:
+    explicit_provider = os.getenv("SCHEMALEDGER_EMBEDDING_PROVIDER", "").strip().casefold()
     provider = _infer_embedding_provider_from_env()
     if provider == "hash":
         return _hash_embedder()
+    if provider in {"anthropic", "claude"}:
+        raise EmbeddingError(
+            "Anthropic Claude does not currently expose a direct embeddings API. "
+            "Use openai, gemini, ollama, lmstudio, or hash for SCHEMALEDGER_EMBEDDING_PROVIDER."
+        )
+    if provider == "openai":
+        api_key = os.getenv("SCHEMALEDGER_OPENAI_API_KEY", "").strip()
+        model = os.getenv("SCHEMALEDGER_OPENAI_EMBEDDING_MODEL", "").strip() or "text-embedding-3-small"
+        base_url = os.getenv("SCHEMALEDGER_OPENAI_BASE_URL", "https://api.openai.com").strip()
+        if not api_key:
+            if explicit_provider == "openai":
+                raise EmbeddingError("SCHEMALEDGER_OPENAI_API_KEY is required for openai embeddings")
+            return _hash_embedder()
+        return _openai_embedder(
+            api_key,
+            model,
+            base_url,
+            float(os.getenv("SCHEMALEDGER_OPENAI_TIMEOUT", "30")),
+        )
+    if provider == "gemini":
+        api_key = os.getenv("SCHEMALEDGER_GEMINI_API_KEY", "").strip()
+        model = os.getenv("SCHEMALEDGER_GEMINI_EMBEDDING_MODEL", "").strip() or "gemini-embedding-001"
+        base_url = os.getenv("SCHEMALEDGER_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com").strip()
+        if not api_key:
+            if explicit_provider == "gemini":
+                raise EmbeddingError("SCHEMALEDGER_GEMINI_API_KEY is required for gemini embeddings")
+            return _hash_embedder()
+        return _gemini_embedder(
+            api_key,
+            model,
+            base_url,
+            float(os.getenv("SCHEMALEDGER_GEMINI_TIMEOUT", "30")),
+        )
     if provider == "ollama":
         base_url = os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL")
         if not base_url:
@@ -200,11 +342,15 @@ def embedder_from_env() -> TextEmbedder:
 
 def _infer_embedding_provider_from_env() -> str:
     provider = os.getenv("SCHEMALEDGER_EMBEDDING_PROVIDER", "").strip().casefold()
-    if provider in {"lmstudio", "ollama", "hash"}:
+    if provider in {"lmstudio", "ollama", "openai", "gemini", "anthropic", "claude", "hash"}:
         return provider
     llm_provider = os.getenv("SCHEMALEDGER_LLM_PROVIDER", "").strip().casefold()
     if llm_provider in {"lmstudio", "ollama"}:
         return llm_provider
+    if os.getenv("SCHEMALEDGER_OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("SCHEMALEDGER_GEMINI_API_KEY"):
+        return "gemini"
     if os.getenv("SCHEMALEDGER_LM_STUDIO_BASE_URL"):
         return "lmstudio"
     if os.getenv("SCHEMALEDGER_OLLAMA_BASE_URL"):
@@ -225,6 +371,20 @@ def _lmstudio_embedder(base_url: str, model: str, timeout_s: float) -> LMStudioT
 @lru_cache(maxsize=8)
 def _ollama_embedder(base_url: str, model: str, timeout_s: float) -> OllamaTextEmbedder:
     return OllamaTextEmbedder(OllamaEmbeddingConfig(base_url=base_url, model=model, timeout_s=timeout_s))
+
+
+@lru_cache(maxsize=8)
+def _openai_embedder(api_key: str, model: str, base_url: str, timeout_s: float) -> OpenAITextEmbedder:
+    return OpenAITextEmbedder(
+        OpenAIEmbeddingConfig(api_key=api_key, model=model, base_url=base_url, timeout_s=timeout_s)
+    )
+
+
+@lru_cache(maxsize=8)
+def _gemini_embedder(api_key: str, model: str, base_url: str, timeout_s: float) -> GeminiTextEmbedder:
+    return GeminiTextEmbedder(
+        GeminiEmbeddingConfig(api_key=api_key, model=model, base_url=base_url, timeout_s=timeout_s)
+    )
 
 
 @lru_cache(maxsize=8)
@@ -275,6 +435,8 @@ def clear_embedding_caches() -> None:
     _hash_embedder.cache_clear()
     _lmstudio_embedder.cache_clear()
     _ollama_embedder.cache_clear()
+    _openai_embedder.cache_clear()
+    _gemini_embedder.cache_clear()
     _detect_lmstudio_embedding_model.cache_clear()
     _detect_ollama_embedding_model.cache_clear()
 
@@ -295,3 +457,9 @@ def _char_ngrams(text: str, size: int = 3) -> list[str]:
     if len(compact) < size:
         return [compact] if compact else []
     return [compact[index : index + size] for index in range(len(compact) - size + 1)]
+
+
+def _gemini_model_resource(model: str) -> str:
+    if model.startswith("models/"):
+        return model
+    return f"models/{model}"

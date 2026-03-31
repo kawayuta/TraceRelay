@@ -42,6 +42,8 @@ def test_plugin_mcp_config_uses_repo_local_stdio_server() -> None:
     assert server["env"]["SCHEMALEDGER_EMBEDDING_PROVIDER"] == "lmstudio"
     assert server["env"]["SCHEMALEDGER_LM_STUDIO_BASE_URL"] == "http://127.0.0.1:1234"
     assert server["env"]["SCHEMALEDGER_OLLAMA_BASE_URL"] == "http://127.0.0.1:11434"
+    assert server["env"]["SCHEMALEDGER_OPENAI_BASE_URL"] == "https://api.openai.com"
+    assert server["env"]["SCHEMALEDGER_GEMINI_BASE_URL"] == "https://generativelanguage.googleapis.com"
     assert server["env"]["SCHEMALEDGER_POSTGRES_DSN"].endswith("/schemaledger_fresh")
 
 
@@ -63,3 +65,5 @@ def test_home_local_installer_script_exists() -> None:
     assert "marketplace.json" in content
     assert "schemaledger.mcp" in content
     assert "SCHEMALEDGER_LLM_PROVIDER" in content
+    assert "SCHEMALEDGER_OPENAI_API_KEY" in content
+    assert "SCHEMALEDGER_GEMINI_API_KEY" in content

@@ -30,12 +30,27 @@ from the repo root. That installs a home-local copy at `~/plugins/schemaledger` 
 - or Ollama on `http://127.0.0.1:11434`
 - PostgreSQL from docker compose on `127.0.0.1:55432`
 
-The checked-in plugin config defaults to LM Studio. To switch it to Ollama, edit `./plugins/schemaledger/.mcp.json` and set:
+The checked-in plugin config defaults to LM Studio. Embeddings can also switch to Ollama, OpenAI, or Gemini through env vars in `./plugins/schemaledger/.mcp.json`.
+
+To switch the task/runtime backend to Ollama, set:
 
 - `SCHEMALEDGER_LLM_PROVIDER=ollama`
 - `SCHEMALEDGER_EMBEDDING_PROVIDER=ollama` if you want Ollama embeddings too
 - `SCHEMALEDGER_OLLAMA_MODEL=<your chat model>`
 - `SCHEMALEDGER_OLLAMA_EMBEDDING_MODEL=<your embedding model>`
+
+To keep the runtime on LM Studio but move only embeddings:
+
+- OpenAI:
+  - `SCHEMALEDGER_EMBEDDING_PROVIDER=openai`
+  - `SCHEMALEDGER_OPENAI_API_KEY=<api key>`
+  - `SCHEMALEDGER_OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
+- Gemini:
+  - `SCHEMALEDGER_EMBEDDING_PROVIDER=gemini`
+  - `SCHEMALEDGER_GEMINI_API_KEY=<api key>`
+  - `SCHEMALEDGER_GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
+
+`claude` / `anthropic` is not a valid embedding provider here because Anthropic does not expose a direct embeddings API.
 
 ## What The Plugin Starts
 
