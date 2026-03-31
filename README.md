@@ -1,7 +1,7 @@
 # SchemaLedger
 
-[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-0F172A)](#codex-plugin)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-MCP%20Ready-D97706)](#claude-code)
+[![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-Supported-0F172A)](#plugins-support)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-MCP%20Ready-D97706)](#plugins-support)
 [![MCP](https://img.shields.io/badge/MCP-FastMCP-2563EB)](#mcp-tools)
 [![LM Studio](https://img.shields.io/badge/LM%20Studio-Connected-10B981)](#lm-studio-setup)
 [![Ollama](https://img.shields.io/badge/Ollama-Supported-111827)](#ollama-setup)
@@ -64,78 +64,33 @@ Live-verified in this repository:
 - [Public Overview](./docs/PUBLIC_OVERVIEW.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 
-## Codex Plugin
+## Plugins Support
 
-SchemaLedger now ships as a repo-local Codex plugin as well.
+### Codex
 
-- Plugin root: `./plugins/schemaledger`
-- Manifest: `./plugins/schemaledger/.codex-plugin/plugin.json`
-- MCP config: `./plugins/schemaledger/.mcp.json`
-- Marketplace entry: `./.agents/plugins/marketplace.json`
-
-The plugin uses repo-local stdio MCP, not a separate hosted service. Codex can launch SchemaLedger directly through:
-
-```bash
-PYTHONPATH=../../src:../.. uv run --project ../.. python -m schemaledger.mcp \
-  --workspace ../../workspace \
-  --dsn postgresql://postgres:postgres@127.0.0.1:55432/schemaledger_fresh
-```
-
-with LM Studio and PostgreSQL injected through plugin-local environment variables. The same plugin config can be switched to Ollama by changing `SCHEMALEDGER_LLM_PROVIDER`, `SCHEMALEDGER_OLLAMA_MODEL`, and optional embedding env vars. For the main app stack, the default runtime path is still `docker compose`.
-
-This repo already includes the local marketplace entry Codex expects:
-
-- `./plugins/schemaledger/.codex-plugin/plugin.json`
-- `./plugins/schemaledger/.mcp.json`
-- `./.agents/plugins/marketplace.json`
-
-To install the same plugin home-locally for Codex across repositories:
+Run:
 
 ```bash
 bash ./scripts/install_codex_plugin.sh
 ```
 
-That creates:
+It creates:
 
 - `~/plugins/schemaledger`
 - `~/.agents/plugins/marketplace.json`
 
-## Claude Code
+### Claude Code
 
-SchemaLedger also supports Claude Code through MCP.
-
-- Default Compose endpoint: `http://127.0.0.1:5064/sse`
-
-With `docker compose up -d --build postgres web mcp` running, you can either:
-
-- add a project-scoped root `.mcp.json`
-- or install `schemaledger` into Claude Code user scope
-
-For a user-scoped Claude Code install across repositories:
+Run:
 
 ```bash
 bash ./scripts/install_claude_code_mcp.sh
 ```
 
-Manual equivalent:
+It registers:
 
-```bash
-claude mcp add --transport sse --scope user schemaledger http://127.0.0.1:5064/sse
-```
-
-That uses the official Claude Code CLI flow and registers:
-
-- name: `schemaledger`
-- transport: `sse`
-- url: `http://127.0.0.1:5064/sse`
-
-Useful commands:
-
-```bash
-claude mcp list
-claude mcp get schemaledger
-claude mcp remove schemaledger
-```
+- `schemaledger` in Claude Code user scope
+- `~/.claude.json` updated through the Claude CLI
 
 ## Core Flow
 
