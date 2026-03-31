@@ -45,6 +45,11 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - It makes schema evolution inspectable. You can trace when the structure changed, why it changed, which candidate was proposed, and which retry finally filled the task.
 - It turns memory into an execution advantage, not just a search feature. Prior subject facts, profile context, and extraction snapshots can flow back into later runs at the right stage of the loop.
 - It makes memory formation observable over time. Subject memory, profile memory, task memory context, and retrieval hits can all be inspected instead of guessed.
+- It improves downstream search quality. Later searches are driven by explicit missing fields, missing relations, evolved schema versions, and prior extracted facts instead of vague natural-language guesses.
+- It reduces bad retrieval behavior. Agents do not have to invent broad or malformed search queries from scratch when they already have a subject-resolved, schema-aware memory state to work from.
+- It creates relay memory across attempts. Each extraction round leaves behind structured outputs that the next search and reasoning step can reuse, so the system searches and reasons with sharper intent over time.
+- It cuts avoidable token spend. Better-scoped memory recall, schema-aware retries, and gap-directed search reduce wasted turns, redundant prompting, and broad re-search loops.
+- It helps suppress hallucinations. By forcing missing structure, missing values, prior extracted facts, and retry outcomes into the loop, SchemaLedger makes it harder for unsupported guesses to pass as settled knowledge.
 - It is operational, not just experimental. The same runtime is available through Web, PostgreSQL, and MCP, and can be reached from Codex, Claude Code, and LM Studio without splitting the source of truth.
 - It stays local-first. You can run the stack with LM Studio or Ollama, keep artifacts in PostgreSQL, inspect everything in Flask, and avoid pushing sensitive workflows into a black-box hosted pipeline.
 
@@ -54,6 +59,58 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - Ordinary structured extraction returns a payload. SchemaLedger returns a payload plus the reasoning trace that explains why the structure changed.
 - Plain vector memory helps recall facts. SchemaLedger ties memory to task lineage, schema versions, and coverage outcomes.
 - Most tool wrappers hide failures. SchemaLedger records failures as first-class artifacts so you can inspect them in Web and MCP.
+
+## Benchmark Snapshot
+
+The charts below are illustrative mockups, not measured benchmark results.
+They show the comparison style that fits this product well and should be replaced with real evaluation data when a benchmark harness is ready.
+
+### Task Success Rate
+
+```text
+Higher is better
+
+SchemaLedger  [##########################################........] 84%
+Claude Code   [#####################################.............] 74%
+Codex         [###################################...............] 71%
+```
+
+### Broad Or Malformed Query Rate
+
+```text
+Lower is better
+
+SchemaLedger  [######............................................] 12%
+Claude Code   [############......................................] 24%
+Codex         [##############....................................] 27%
+```
+
+### Unsupported Claim Rate
+
+```text
+Lower is better
+
+SchemaLedger  [####..............................................]  8%
+Claude Code   [########..........................................] 16%
+Codex         [#########.........................................] 18%
+```
+
+### Average Tokens Per Successful Task
+
+```text
+Lower is better
+
+SchemaLedger  [############################......................] 3800
+Claude Code   [####################################..............] 4900
+Codex         [######################################............] 5200
+```
+
+### What These Charts Are Meant To Show
+
+- SchemaLedger should win when the task depends on evolving structure, not just one-shot prompting.
+- Schema-aware memory recall should reduce broad search, malformed search, and repeated search loops.
+- Gap-directed retries should lower wasted token spend relative to agents that have to rediscover task structure each turn.
+- Traceable schema evolution and memory formation should reduce unsupported claims by making missing facts and missing structure explicit.
 
 ## Current Working Stack
 
