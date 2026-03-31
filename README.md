@@ -60,58 +60,40 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 
 They show the comparison style that fits this product well and should be replaced with real evaluation data when a benchmark harness is ready.
 
-### Task Success Rate
+### Normalized Comparison
+
+Legend:
+
+- blue: `SchemaLedger`
+- violet: `Claude Code`
+- orange: `Codex`
 
 ```mermaid
+---
+config:
+  xyChart:
+    showDataLabel: true
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#2563EB, #7C3AED, #F59E0B"
+---
 xychart-beta
-    title "Task Success Rate (%)"
-    x-axis ["SchemaLedger", "Claude Code", "Codex"]
-    y-axis "Percent" 0 --> 100
-    bar [84, 74, 71]
-```
-
-### Broad Or Malformed Query Rate
-
-```mermaid
-xychart-beta
-    title "Broad Or Malformed Query Rate (%)"
-    x-axis ["SchemaLedger", "Claude Code", "Codex"]
-    y-axis "Percent" 0 --> 30
-    bar [12, 24, 27]
-```
-
-### Unsupported Claim Rate
-
-```mermaid
-xychart-beta
-    title "Unsupported Claim Rate (%)"
-    x-axis ["SchemaLedger", "Claude Code", "Codex"]
-    y-axis "Percent" 0 --> 20
-    bar [8, 16, 18]
-```
-
-### Average Tokens Per Successful Task
-
-```mermaid
-xychart-beta
-    title "Average Tokens Per Successful Task"
-    x-axis ["SchemaLedger", "Claude Code", "Codex"]
-    y-axis "Tokens" 0 --> 6000
-    bar [3800, 4900, 5200]
-```
-
-### Long-Task Context Forgetting Rate
-
-```mermaid
-xychart-beta
-    title "Long-Task Context Forgetting Rate (%)"
-    x-axis ["SchemaLedger", "Claude Code", "Codex"]
-    y-axis "Percent" 0 --> 30
-    bar [10, 22, 26]
+    title "Benchmark Snapshot: Normalized Evaluation Profile"
+    x-axis ["Task Success", "Query Quality", "Claim Support", "Token Efficiency", "Long-Task Recall"]
+    y-axis "Normalized Score" 0 --> 100
+    line [84, 88, 92, 79, 90]
+    line [74, 76, 84, 61, 78]
+    line [71, 73, 82, 55, 74]
 ```
 
 ### What These Charts Are Meant To Show
 
+- The benchmark is shown as one normalized profile so the comparison reads as an overall product shape, not five disconnected charts.
+- Higher is better across all axes in this view.
+- Query Quality reflects the inverse of broad or malformed query rate.
+- Claim Support reflects the inverse of unsupported claim rate.
+- Token Efficiency reflects lower average tokens per successful task.
+- Long-Task Recall reflects the inverse of long-task context forgetting rate.
 - SchemaLedger should win when the task depends on evolving structure, not just one-shot prompting.
 - Schema-aware memory recall should reduce broad search, malformed search, and repeated search loops.
 - Gap-directed retries should lower wasted token spend relative to agents that have to rediscover task structure each turn.
