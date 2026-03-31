@@ -62,29 +62,7 @@ They show the comparison style that fits this product well and should be replace
 
 ### Normalized Comparison
 
-Legend:
-
-- blue: `SchemaLedger`
-- violet: `Claude Code`
-- orange: `Codex`
-
-```mermaid
----
-config:
-  xyChart:
-    showDataLabel: true
-  themeVariables:
-    xyChart:
-      plotColorPalette: "#2563EB, #7C3AED, #F59E0B"
----
-xychart-beta
-    title "Benchmark Snapshot: Normalized Evaluation Profile"
-    x-axis ["Task Success", "Query Quality", "Claim Support", "Token Efficiency", "Long-Task Recall"]
-    y-axis "Normalized Score" 0 --> 100
-    bar [84, 88, 92, 79, 90]
-    bar [74, 76, 84, 61, 78]
-    bar [71, 73, 82, 55, 74]
-```
+![Benchmark Snapshot](./docs/images/benchmark-snapshot.svg)
 
 ### What These Charts Are Meant To Show
 
