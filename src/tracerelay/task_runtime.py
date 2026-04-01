@@ -9,7 +9,7 @@ from .evolution.ids import next_id
 from .evolution.requirements import build_requirement
 from .extraction import Extractor
 from .llm import StructuredLLM, llm_from_env
-from .memory import ArtifactMemoryStore, resolve_user_id
+from .memory import ArtifactMemoryStore, normalize_subject, resolve_user_id
 from .models import (
     ArtifactRecord,
     CoverageReport,
@@ -86,12 +86,14 @@ class TaskRuntime:
         )
         self.memory_store.append_task_context(task_id, task_memory)
 
-        current_schema = self.schema_store.latest_for_family(interpretation.family)
+        subject_key = normalize_subject(interpretation.resolved_subject)
+        current_schema = self.schema_store.latest_for_subject(interpretation.family, subject_key)
         schema_history: list[SchemaVersion] = []
         if current_schema is None:
             schema_payload = self.llm.build_initial_schema(interpretation)
             current_schema = self.schema_store.create_or_update_schema(
                 task_id,
+                subject_key,
                 interpretation.family,
                 schema_payload,
                 parent=None,
@@ -201,6 +203,7 @@ class TaskRuntime:
             )
             proposed_schema = self.schema_store.create_or_update_schema(
                 task_id,
+                subject_key,
                 interpretation.family,
                 proposed_payload,
                 parent=current_schema,

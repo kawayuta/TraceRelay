@@ -1,6 +1,10 @@
 import pytest
 
+from tracerelay.memory import normalize_subject
+from tracerelay.mcp.server import LocalMCPServer
 from tracerelay.models import TaskSpec
+from tracerelay.task_flow import JsonlArtifactStore
+from tracerelay.web.repository import TaskRepository
 from tracerelay.task_runtime import TaskRuntime
 
 
@@ -83,3 +87,91 @@ def test_policy_incident_and_relationship_are_llm_selected_and_complete(fake_llm
         assert run.status == "success"
         assert run.reason == "complete"
         assert run.schema.family == family
+
+
+def test_runtime_scopes_schema_reuse_to_subject(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+
+    google = runtime.run_task(
+        TaskSpec(
+            prompt="Googleの事業内容に加えて、主要経営陣、主要子会社、主要買収案件、主要競合、主要リスク、地域別展開も構造化して整理して"
+        )
+    )
+    acme = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid."))
+
+    assert google.schema_history[-1].version == 2
+    assert acme.schema_history[0].version == 1
+    assert acme.schema_history[0].subject_key == normalize_subject("ACME Hypergrid")
+    assert acme.schema_history[0].schema_id != google.schema_history[-1].schema_id
+
+
+class _SubjectRoutingLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        if "Elon" in spec.prompt:
+            return {
+                "intent": "investigate_subject",
+                "resolved_subject": "Elon Musk",
+                "subject_candidates": ["Elon Musk"],
+                "family": "organization",
+                "family_rationale": "Comparison prompt still routes to an organization-like profile.",
+                "requested_fields": ["overview"],
+                "requested_relations": [],
+                "scope_hints": ["overview"],
+                "task_shape": "subject_analysis",
+                "locale": "en",
+            }
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "ASPI",
+            "subject_candidates": ["ASPI"],
+            "family": "organization",
+            "family_rationale": "The task asks for an organization profile.",
+            "requested_fields": ["overview"],
+            "requested_relations": [],
+            "scope_hints": ["overview"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Simple schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        from tracerelay.models import ExtractionResult
+
+        return ExtractionResult(
+            payload={"overview": f"{interpretation.resolved_subject} overview"},
+            status="success",
+            provider_metadata={"provider": "subject-routing-test", "attempt": attempt},
+        )
+
+
+def test_subject_lookup_prefers_exact_resolved_subject_over_prompt_mentions(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_SubjectRoutingLLM(), artifact_store=store)
+    aspi = runtime.run_task(TaskSpec(prompt="ASPIを構造化して整理して"))
+    runtime.run_task(TaskSpec(prompt="Elon MuskとASPIの比較メモを整理して"))
+
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    result = server.call_tool("inspect_latest_changes", {"subject": "ASPI"})
+
+    assert result["found"] is True
+    assert result["task_id"] == aspi.task_id
+    assert result["task"]["interpretation"]["resolved_subject"] == "ASPI"

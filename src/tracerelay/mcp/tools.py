@@ -20,6 +20,7 @@ from ..config import postgres_dsn_from_env
 from ..llm import LLMError
 from ..indexer.loader import TaskRuntimeProjector
 from ..evolution.ids import next_id
+from ..memory import normalize_subject
 from ..models import ArtifactRecord
 from ..task_runtime import TaskRuntime
 from ..task_flow import JsonlArtifactStore
@@ -372,6 +373,10 @@ class MCPToolbox:
         if task_id:
             return task_id
         if subject:
+            normalized_subject = normalize_subject(subject)
+            for task in self.repository.list_tasks():
+                if normalize_subject(str(task.get("resolved_subject", ""))) == normalized_subject:
+                    return str(task["task_id"])
             matches = self.repository.search(subject)
             if matches:
                 return str(matches[0]["task_id"])

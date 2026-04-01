@@ -1,6 +1,6 @@
 ---
 name: what-changed
-description: Use TraceRelay when the user asks what changed, why something retried, why structure evolved, or how the latest run differs from earlier attempts.
+description: Use TraceRelay when the user asks what changed, what happened in the last run, why something retried, why structure evolved, or how the latest run differs from earlier attempts.
 ---
 
 # What Changed
@@ -8,6 +8,7 @@ description: Use TraceRelay when the user asks what changed, why something retri
 Use this skill when the request sounds like:
 
 - what changed
+- what happened in the last run
 - why did it retry
 - why did the structure change
 - what changed since the last run

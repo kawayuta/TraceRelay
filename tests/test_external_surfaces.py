@@ -790,6 +790,7 @@ def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
     schema_store = ArtifactSchemaStore(store)
     schema = schema_store.create_or_update_schema(
         "task-1",
+        "google",
         "organization",
         {
             "required_fields": ["overview", "leadership", "overview"],
@@ -807,6 +808,7 @@ def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
     extraction_schema = _task_extraction_schema(
         SchemaVersion(
             schema_id="schema-1",
+            subject_key="google",
             family="organization",
             version=1,
             parent_schema_id=None,

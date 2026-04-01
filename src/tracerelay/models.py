@@ -37,6 +37,7 @@ class TaskInterpretation:
 @dataclass(frozen=True)
 class SchemaVersion:
     schema_id: str
+    subject_key: str
     family: str
     version: int
     parent_schema_id: str | None

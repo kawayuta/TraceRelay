@@ -1,12 +1,15 @@
 ---
 name: structure-this
-description: Use TraceRelay when the user wants a subject organized into structured fields, relations, or a reusable profile before further search or reasoning.
+description: Use TraceRelay when the user wants a subject researched, analyzed, organized into structured fields and relations, or turned into a reusable profile before further search or reasoning.
 ---
 
 # Structure This
 
 Use this skill when the request sounds like:
 
+- research this subject
+- analyze this company
+- tell me about this project in a structured way
 - structure this
 - organize this subject
 - build a profile for this company

@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: What Changed"
-  short_description: "Inspect the latest run, retries, and schema changes"
-  default_prompt: "Use inspect_latest_changes first, then analyze_information_gaps or plan_next_step to decide what to do next without inventing a broad search strategy."
+  short_description: "Inspect the latest run, retries, schema changes, and what should happen next"
+  default_prompt: "If the user asks what changed, what happened in the latest run, why it retried, or what to do next, use inspect_latest_changes first, then analyze_information_gaps or plan_next_step instead of inventing a broad search strategy."
 
 dependencies:
   tools:

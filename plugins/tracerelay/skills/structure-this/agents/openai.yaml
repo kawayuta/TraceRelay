@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Structure This"
-  short_description: "Turn a subject into structured fields, relations, and lineage"
-  default_prompt: "Use structure_subject first, then plan_next_step and analyze_information_gaps before external search so schema growth and search stay grounded."
+  short_description: "Turn a research target into structured fields, relations, schema, and lineage"
+  default_prompt: "If the user wants to research, analyze, organize, map, profile, or structure a subject, use structure_subject first, then plan_next_step and analyze_information_gaps before external search so schema growth and search stay grounded."
 
 dependencies:
   tools:

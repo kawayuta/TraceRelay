@@ -11,8 +11,12 @@ class ArtifactSchemaStore:
     def __init__(self, artifact_store: Any) -> None:
         self.artifact_store = artifact_store
 
-    def latest_for_family(self, family: str) -> SchemaVersion | None:
-        schemas = [schema for schema in self.all_schemas() if schema.family == family]
+    def latest_for_subject(self, family: str, subject_key: str) -> SchemaVersion | None:
+        schemas = [
+            schema
+            for schema in self.all_schemas()
+            if schema.family == family and schema.subject_key == subject_key
+        ]
         if not schemas:
             return None
         return max(schemas, key=lambda item: item.version)
@@ -29,6 +33,7 @@ class ArtifactSchemaStore:
     def create_or_update_schema(
         self,
         task_id: str,
+        subject_key: str,
         family: str,
         payload: dict[str, object],
         parent: SchemaVersion | None,
@@ -40,6 +45,7 @@ class ArtifactSchemaStore:
         )
         schema = SchemaVersion(
             schema_id=next_id("schema"),
+            subject_key=subject_key,
             family=family,
             version=1 if parent is None else parent.version + 1,
             parent_schema_id=None if parent is None else parent.schema_id,
@@ -76,6 +82,7 @@ class ArtifactSchemaStore:
         )
         return SchemaVersion(
             schema_id=str(payload["schema_id"]),
+            subject_key=str(payload.get("subject_key", "")),
             family=str(payload["family"]),
             version=int(payload["version"]),
             parent_schema_id=str(payload["parent_schema_id"]) if payload.get("parent_schema_id") else None,

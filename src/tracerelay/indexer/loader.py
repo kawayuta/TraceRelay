@@ -99,6 +99,7 @@ class TaskRuntimeProjector:
                             "task_id": artifact.task_id,
                             "artifact_id": artifact.artifact_id,
                             "schema_id": payload.get("schema_id"),
+                            "subject_key": payload.get("subject_key"),
                             "family": payload.get("family"),
                             "version": payload.get("version"),
                             "payload": payload,

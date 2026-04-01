@@ -1,6 +1,6 @@
 ---
 name: use-tracerelay
-description: Automatically route structured investigations, prior-work continuation, change inspection, and memory-backed follow-up tasks into TraceRelay MCP tools.
+description: Automatically route research, analysis, investigation, profiling, prior-work continuation, change inspection, and memory-backed follow-up tasks into TraceRelay MCP tools before generic search or ad hoc reasoning.
 ---
 
 # Use TraceRelay
@@ -12,6 +12,8 @@ Do not wait for the user to name the tools explicitly if the request sounds like
 
 Auto-route into TraceRelay when the user asks for any of the following:
 
+- research, investigate, analyze, look into, or dig into a subject
+- tell me about a company, person, policy, incident, project, or relationship
 - structure or re-structure a subject
 - organize, map, or profile a company, policy, incident, relationship, or investigation target
 - continue previous work on the same company, incident, policy, or relationship
@@ -20,6 +22,8 @@ Auto-route into TraceRelay when the user asks for any of the following:
 - recall what was learned in earlier tasks
 - use what we already know before searching again
 - compare attempts, memory recall, schema versions, or artifact lineage
+- figure out what is missing before searching again
+- decide what to search next or which queries to use
 
 ## Workflow
 

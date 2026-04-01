@@ -13,7 +13,7 @@ from ..action_planning import (
     build_next_step_plan,
     build_search_query_plan,
 )
-from .repository import TaskBrowseRepository
+from .repository import TaskBrowseRepository, _memory_record_matches_subject, _normalize_subject_key
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3040-\u30ff\u4e00-\u9fff]+")
 
@@ -682,19 +682,21 @@ def build_workspace_profile_memory(repository: TaskBrowseRepository, profile_id:
 def build_subject_memory(repository: TaskBrowseRepository, subject: str, limit: int = 6) -> dict[str, object]:
     docs = _collect_memory_documents(repository)
     normalized = subject.casefold().strip()
+    normalized_subject_key = _normalize_subject_key(subject)
     search_bundle = build_memory_search(repository, subject, limit=limit)
     exact_matches = [
         doc
         for doc in docs
-        if normalized
-        and (
-            normalized in str(doc["resolved_subject"]).casefold()
-            or normalized in str(doc["prompt"]).casefold()
-            or normalized in str(doc["search_text"]).casefold()
-        )
+        if normalized_subject_key and _memory_record_matches_subject(doc, normalized_subject_key)
     ]
     search_results = search_bundle["results"]
-    related_docs = _task_docs_from_search_results(search_results, docs)
+    related_docs = [
+        doc
+        for doc in _task_docs_from_search_results(search_results, docs)
+        if normalized_subject_key and _memory_record_matches_subject(doc, normalized_subject_key)
+    ]
+    if not related_docs and not exact_matches:
+        related_docs = _task_docs_from_search_results(search_results, docs)
     if not exact_matches:
         exact_matches = related_docs
 

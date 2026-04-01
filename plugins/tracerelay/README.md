@@ -35,6 +35,8 @@ Claude Code uses the root `.mcp.json` and expects the docker-compose MCP server 
 
 Natural prompts that should route well in Claude Code:
 
+- `Research ASPI and structure what matters before searching again.`
+- `Analyze this company and use what we already learned before looking for more.`
 - `Continue what we learned about ASPI and use prior findings before searching again.`
 - `What changed in the latest run and why did it retry?`
 - `Structure this company and keep the previous memory in play.`

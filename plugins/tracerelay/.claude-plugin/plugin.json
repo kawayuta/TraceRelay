@@ -1,6 +1,6 @@
 {
   "name": "tracerelay",
-  "description": "Use structure_subject for structured profiling, continue_prior_work for continuity, inspect_latest_changes for retry review, and plan_next_step before broad search in local LLM workflows.",
+  "description": "Use structure_subject for research and structured profiling, continue_prior_work for continuity, inspect_latest_changes for run review, and plan_next_step before broad search in local LLM workflows.",
   "version": "0.1.0",
   "author": {
     "name": "TraceRelay"

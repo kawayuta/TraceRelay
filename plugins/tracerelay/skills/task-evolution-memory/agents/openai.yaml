@@ -1,7 +1,7 @@
 interface:
   display_name: "TraceRelay: Task Evolution"
-  short_description: "Evolve schema and memory while the task runs"
-  default_prompt: "Use structure_subject or continue_prior_work first, then plan_next_step, analyze_information_gaps, and prepare_search_queries before generic search or free-form action."
+  short_description: "Evolve schema and memory while long-running research or analysis continues"
+  default_prompt: "For long-running research, analysis, investigation, or memory-backed follow-up work, use structure_subject or continue_prior_work first, then plan_next_step, analyze_information_gaps, and prepare_search_queries before generic search or free-form action."
 
 dependencies:
   tools:

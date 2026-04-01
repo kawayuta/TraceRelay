@@ -1,12 +1,16 @@
 ---
 name: task-evolution-memory
-description: Route ongoing research, prior-work continuation, schema drift inspection, and memory-backed follow-up tasks into TraceRelay automatically.
+description: Route ongoing research, analysis, investigation, prior-work continuation, schema drift inspection, and memory-backed follow-up tasks into TraceRelay automatically.
 ---
 
 # Task Evolution And Memory
 
 Use this skill for requests that sound like:
 
+- "research this company"
+- "analyze this subject"
+- "look into what is going on with ..."
+- "before searching again, use what we already know"
 - "continue what we learned about ..."
 - "structure this research"
 - "pick up where we left off"

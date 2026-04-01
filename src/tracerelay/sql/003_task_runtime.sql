@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
     artifact_id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
     schema_id TEXT NOT NULL,
+    subject_key TEXT,
     family TEXT NOT NULL,
     version INTEGER NOT NULL,
     payload JSONB NOT NULL
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
 ALTER TABLE task_memory_context ADD COLUMN IF NOT EXISTS memory_type TEXT;
 
 ALTER TABLE task_artifact ADD COLUMN IF NOT EXISTS recorded_at TIMESTAMPTZ;
+ALTER TABLE schema_version ADD COLUMN IF NOT EXISTS subject_key TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_task_artifact_task_id_order ON task_artifact (task_id, artifact_order);
 CREATE INDEX IF NOT EXISTS idx_task_artifact_task_id_recorded_at ON task_artifact (task_id, recorded_at DESC);
@@ -99,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_task_prompt_task_id ON task_prompt (task_id);
 CREATE INDEX IF NOT EXISTS idx_task_interpretation_task_id ON task_interpretation (task_id);
 CREATE INDEX IF NOT EXISTS idx_task_run_task_id ON task_run (task_id);
 CREATE INDEX IF NOT EXISTS idx_schema_version_task_id ON schema_version (task_id);
+CREATE INDEX IF NOT EXISTS idx_schema_version_subject_family ON schema_version (subject_key, family, version DESC);
 CREATE INDEX IF NOT EXISTS idx_task_extraction_task_id ON task_extraction (task_id);
 CREATE INDEX IF NOT EXISTS idx_coverage_report_task_id ON coverage_report (task_id);
 CREATE INDEX IF NOT EXISTS idx_task_schema_candidate_map_task_id ON task_schema_candidate_map (task_id);

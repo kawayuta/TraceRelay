@@ -1,7 +1,7 @@
 {
   "name": "tracerelay",
   "version": "0.1.0",
-  "description": "Self-evolving schema runtime plugin for structured profiling, prior-work continuation, change inspection, and gap-driven next-step planning in local LLM workflows.",
+  "description": "Self-evolving schema runtime plugin for research, analysis, structured profiling, prior-work continuation, change inspection, and gap-driven next-step planning in local LLM workflows.",
   "author": {
     "name": "kawayuta",
     "email": "addkawayuta@gmail.com",
@@ -23,8 +23,8 @@
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "TraceRelay",
-    "shortDescription": "Task-first schema evolution, memory recall, and lineage tracing for local LLM workflows",
-    "longDescription": "Run TraceRelay inside Codex as a repo-local plugin. The plugin connects to the running docker-compose MCP server, exposes task evolution and memory tools, and keeps schema lineage inspectable across Web, MCP, and the database.",
+    "shortDescription": "Research, memory recall, schema evolution, and lineage tracing for long-running local LLM workflows",
+    "longDescription": "Run TraceRelay inside Codex as a repo-local plugin. The plugin connects to the running docker-compose MCP server, exposes high-level tools for structuring research, continuing earlier work, inspecting changes, analyzing gaps, and planning next-step search, and keeps schema lineage inspectable across Web, MCP, and the database.",
     "developerName": "kawayuta",
     "category": "Coding",
     "capabilities": [
@@ -36,9 +36,9 @@
     "privacyPolicyURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
     "termsOfServiceURL": "https://github.com/kawayuta/TraceRelay/blob/main/README.md",
     "defaultPrompt": [
-      "Use continue_prior_work when the user wants to keep going on the same subject and reuse prior memory",
-      "Use structure_subject when the user wants a subject profiled, organized, or mapped into structured fields",
-      "Use inspect_latest_changes when the user asks what changed, why it retried, or why the schema evolved",
+      "Use continue_prior_work when the user wants to keep going on the same subject, reuse previous findings, or avoid starting from scratch",
+      "Use structure_subject when the user wants to research, analyze, profile, organize, or map a subject into structured fields",
+      "Use inspect_latest_changes when the user asks what changed, what happened in the latest run, why it retried, or why the schema evolved",
       "Use plan_next_step before generic search so TraceRelay decides what is missing and what to do next",
       "Use prepare_search_queries when external search is needed so the query is grounded in known facts and open gaps"
     ],
