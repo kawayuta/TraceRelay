@@ -223,3 +223,58 @@ def test_postgres_memory_queries_are_readable_from_projection_rows():
     assert len(subject_bundle["memory_documents"]) == 2
     assert len(subject_bundle["task_memory_contexts"]) == 1
     assert subject_bundle["profiles"][0]["profile_key"] == "default"
+
+
+def test_search_memory_prefers_exact_subject_matches_over_prompt_noise():
+    aspi_rows = [
+        (
+            "memory-aspi",
+            "task-aspi",
+            "default",
+            "aspi",
+            "organization",
+            "ASPI summary",
+            {
+                "memory_type": "subject_memory",
+                "resolved_subject": "ASPI",
+                "subject_aliases": ["aspi"],
+                "prompt": "ASPI update",
+            },
+            {"algorithm": "hash_vector_v1", "dimensions": 48, "vector": [1.0, 0.0, 0.0]},
+        ),
+    ]
+    noisy_rows = [
+        (
+            "memory-elon",
+            "task-elon",
+            "default",
+            "elon_musk",
+            "organization",
+            "Elon summary mentioning ASPI",
+            {
+                "memory_type": "subject_memory",
+                "resolved_subject": "Elon Musk",
+                "subject_aliases": ["elon_musk", "elon"],
+                "prompt": "Elon Musk compared against ASPI in passing",
+            },
+            {"algorithm": "hash_vector_v1", "dimensions": 48, "vector": [0.99, 0.0, 0.0]},
+        ),
+    ]
+
+    def fake_fetchall(sql, params=()):  # noqa: ANN001
+        if "FROM memory_document" in sql:
+            return list(aspi_rows + noisy_rows)
+        if "FROM task_memory_context" in sql:
+            return []
+        if "FROM user_profile" in sql:
+            return []
+        return []
+
+    repository = PostgresTaskRepository(connection_factory=lambda: object())
+    repository._fetchall = fake_fetchall  # type: ignore[method-assign]
+
+    results = repository.search_memory("ASPI", limit=5)
+
+    assert results
+    assert results[0]["task_id"] == "task-aspi"
+    assert all(item["task_id"] != "task-elon" for item in results)

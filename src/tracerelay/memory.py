@@ -85,8 +85,15 @@ class ArtifactMemoryStore:
     ) -> tuple[MemoryHit, ...]:
         query_vector = self.embedder.embed(query)
         query_algorithm = getattr(self.embedder, "algorithm", "hash_vector_v1")
+        documents = list(self.all_memory_documents())
+        if subject_key:
+            exact_subject_documents = [
+                document for document in documents if document.subject_key == subject_key
+            ]
+            if exact_subject_documents:
+                documents = exact_subject_documents
         results: list[MemoryHit] = []
-        for document in self.all_memory_documents():
+        for document in documents:
             if exclude_task_id is not None and document.source_task_id == exclude_task_id:
                 continue
             if kinds is not None and document.kind not in kinds:

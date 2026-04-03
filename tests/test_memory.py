@@ -166,6 +166,26 @@ def test_memory_store_search_and_profile_snapshot():
     assert hits[0].subject_key == normalize_subject("ASPI Helium Project")
 
 
+def test_memory_store_subject_search_filters_unrelated_subject_noise():
+    store = InMemoryArtifactStore()
+    llm = RecordingMemoryLLM()
+    runtime = TaskRuntime(llm=llm, artifact_store=store)
+
+    runtime.run_task(TaskSpec(prompt="ASPIの概要を構造化して", user_id="analyst"))
+    runtime.run_task(TaskSpec(prompt="Googleの事業内容を構造化して", user_id="analyst"))
+
+    memory_store = ArtifactMemoryStore(store)
+    hits = memory_store.search(
+        "ASPI latest market update",
+        user_id="analyst",
+        subject_key=normalize_subject("ASPI Helium Project"),
+        top_k=10,
+    )
+
+    assert hits
+    assert all(hit.subject_key == normalize_subject("ASPI Helium Project") for hit in hits)
+
+
 def test_lmstudio_text_embedder_calls_embeddings_endpoint():
     client = LMStudioTextEmbedder(
         LMStudioEmbeddingConfig(

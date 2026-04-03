@@ -883,9 +883,6 @@ def _subject_aliases_for_task(task: dict[str, object]) -> list[str]:
     if normalized:
         aliases.add(normalized)
     aliases.update(_split_subject_aliases(resolved_subject))
-    aliases.update(_split_subject_aliases(str(task.get("prompt", ""))))
-    if interpretation.get("family"):
-        aliases.add(_normalize_subject_key(str(interpretation.get("family"))))
     return sorted(alias for alias in aliases if alias)
 
 
@@ -1066,15 +1063,9 @@ def _memory_record_matches_subject(record: dict[str, object], subject_key: str) 
     if normalized == record_subject:
         return True
     payload = dict(record.get("payload", {}))
-    aliases = {normalized, record_subject}
+    aliases = {record_subject}
     aliases.update(_normalize_subject_key(str(alias)) for alias in payload.get("subject_aliases", []) if alias)
-    if normalized in aliases:
-        return True
-    return any(
-        normalized in alias or alias in normalized
-        for alias in aliases
-        if alias and alias != "unknown"
-    )
+    return normalized in {alias for alias in aliases if alias and alias != "unknown"}
 
 
 def _rank_memory_records(
@@ -1089,8 +1080,14 @@ def _rank_memory_records(
     query_algorithm = getattr(active_embedder, "algorithm", "hash_vector_v1")
     normalized_query = _normalize_subject_key(query)
     query_aliases = _split_subject_aliases(query)
+    subject_matched_records = [
+        record
+        for record in records
+        if _record_subject_aliases(record).intersection(query_aliases)
+    ]
+    candidate_records = subject_matched_records or records
     ranked: list[dict[str, object]] = []
-    for record in records:
+    for record in candidate_records:
         if memory_type is None and record.get("record_type") == "task_memory_context":
             continue
         embedding = dict(record.get("embedding", {}))
@@ -1115,8 +1112,6 @@ def _subject_boost_for_record(record: dict[str, object], normalized_query: str, 
     aliases = _record_subject_aliases(record)
     if normalized_query in aliases:
         return 0.45
-    if any(alias in normalized_query or normalized_query in alias for alias in aliases):
-        return 0.18
     if any(alias in query_aliases for alias in aliases):
         return 0.1
     return 0.0
