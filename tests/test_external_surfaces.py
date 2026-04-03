@@ -35,6 +35,41 @@ from tracerelay.web.app import build_task_dashboard, create_app
 from tracerelay.web.repository import PostgresTaskRepository, TaskRepository
 
 
+class _RecordingTaskRepository:
+    def __init__(self, inner: TaskRepository) -> None:
+        self.inner = inner
+        self.search_calls: list[dict[str, object]] = []
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.inner, name)
+
+    def search_memory(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        profile_key: str | None = None,
+        subject_key: str | None = None,
+        memory_type: str | None = None,
+    ) -> list[dict[str, object]]:
+        self.search_calls.append(
+            {
+                "query": query,
+                "limit": limit,
+                "profile_key": profile_key,
+                "subject_key": subject_key,
+                "memory_type": memory_type,
+            }
+        )
+        return self.inner.search_memory(
+            query,
+            limit=limit,
+            profile_key=profile_key,
+            subject_key=subject_key,
+            memory_type=memory_type,
+        )
+
+
 class _FakeHTTPResponse:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
@@ -567,6 +602,41 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"
     assert server.read_resource("tracerelay://memory/subjects/Google")["subject"] == "Google"
     assert server.read_resource(f"tracerelay://memory/tasks/{google.task_id}")["task_id"] == google.task_id
+
+
+def test_memory_web_search_supports_exact_subject_scope(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+    google = runtime.run_task(
+        TaskSpec(prompt="Googleの事業内容に加えて、主要経営陣、主要リスクも構造化して整理して")
+    )
+
+    repository = _RecordingTaskRepository(TaskRepository(store))
+    app = create_app(repository)
+    client = app.test_client()
+
+    search_payload = client.get("/api/memory/search?q=leadership&subject=Google").get_json()
+    assert search_payload["subject_scope"] == "Google"
+    assert search_payload["results"][0]["task_id"] == google.task_id
+    assert repository.search_calls[-1]["query"] == "leadership"
+    assert repository.search_calls[-1]["subject_key"] == "google"
+
+    search_html = client.get("/memory/search?q=leadership&subject=Google")
+    assert search_html.status_code == 200
+    search_html_text = search_html.get_data(as_text=True)
+    assert 'name="subject"' in search_html_text
+    assert 'value="Google"' in search_html_text
+    assert "Subject scope" in search_html_text
+
+    repository.search_calls.clear()
+    subject_payload = client.get("/api/memory/subjects/Google").get_json()
+    assert subject_payload["subject_scope"] == "Google"
+    assert any(call["query"] == "Google" and call["subject_key"] == "google" for call in repository.search_calls)
+
+    repository.search_calls.clear()
+    task_memory_payload = client.get(f"/api/memory/tasks/{google.task_id}").get_json()
+    assert task_memory_payload["subject_scope"] == "Google"
+    assert any(call["query"] == "Google" and call["subject_key"] == "google" for call in repository.search_calls)
 
 
 def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):

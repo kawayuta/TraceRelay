@@ -112,6 +112,10 @@
           <span>Query</span>
           <input type="search" name="q" placeholder="Search prior tasks, subjects, or learned facts" value="{{ memory.search_query or '' }}">
         </label>
+        <label class="field-stack field-span-2">
+          <span>Exact subject</span>
+          <input type="search" name="subject" placeholder="Limit to one resolved subject" value="{{ memory.subject_scope or '' }}">
+        </label>
         <button class="primary-button" type="submit">Search</button>
       </form>
 
@@ -175,6 +179,7 @@
       <div class="summary-list">
         <div class="summary-list-row"><span>Current view</span><strong>{{ memory.kind }}</strong></div>
         <div class="summary-list-row"><span>Search query</span><strong>{{ memory.search_query or "none" }}</strong></div>
+        <div class="summary-list-row"><span>Subject scope</span><strong>{{ memory.subject_scope or "none" }}</strong></div>
         <div class="summary-list-row"><span>Trace link</span><strong>{% if memory.task_trace_url %}available{% else %}n/a{% endif %}</strong></div>
       </div>
       <div class="top-gap">

@@ -51,16 +51,19 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     @app.get("/memory/search")
     def memory_dashboard() -> object:
         query = request.args.get("q", "").strip()
+        subject_scope = request.args.get("subject", "").strip()
         memory = build_workspace_profile_memory(repository)
         memory["search_query"] = query
-        if query:
-            search_result = build_memory_search(repository, query, limit=8)
+        memory["subject_scope"] = subject_scope
+        if query or subject_scope:
+            search_result = build_memory_search(repository, query, limit=8, subject_scope=subject_scope)
             memory["blocks"].append(
                 {
                     "title": "Vector Search Results",
                     "description": f"Top {len(search_result['results'])} matches using {search_result['strategy']}.",
                     "lines": [
-                        f"query: {query}",
+                        f"query: {search_result['query'] or 'n/a'}",
+                        f"subject scope: {search_result['subject_scope'] or 'none'}",
                         f"limit: {search_result['limit']}",
                         f"strategy: {search_result['strategy']}",
                     ],
@@ -160,8 +163,9 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     @app.get("/api/memory/search")
     def api_memory_search() -> object:
         query = request.args.get("q", "").strip()
+        subject_scope = request.args.get("subject", "").strip()
         limit = _bounded_limit(request.args.get("limit", "8"))
-        return jsonify(build_memory_search(repository, query, limit=limit))
+        return jsonify(build_memory_search(repository, query, limit=limit, subject_scope=subject_scope))
 
     @app.get("/api/memory/profile")
     @app.get("/api/memory/profile/<profile_id>")
@@ -182,10 +186,26 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     return app
 
 
-def build_memory_search(repository: TaskBrowseRepository, query: str, limit: int = 8) -> dict[str, object]:
+def build_memory_search(
+    repository: TaskBrowseRepository,
+    query: str,
+    limit: int = 8,
+    subject_scope: str | None = None,
+) -> dict[str, object]:
     query = query.strip()
+    subject_scope = (subject_scope or "").strip() or None
+    effective_query = query or (subject_scope or "")
+    normalized_subject_scope = _normalize_subject_key(subject_scope) if subject_scope else None
     summaries = {str(item.get("task_id", "")): item for item in repository.list_tasks()}
-    ranked_records = repository.search_memory(query, limit=max(limit * 4, limit))
+    ranked_records = (
+        repository.search_memory(
+            effective_query,
+            limit=max(limit * 4, limit),
+            subject_key=normalized_subject_scope,
+        )
+        if effective_query
+        else []
+    )
     best_by_task: dict[str, dict[str, object]] = {}
     for record in ranked_records:
         task_id = str(record.get("task_id", ""))
@@ -212,7 +232,7 @@ def build_memory_search(repository: TaskBrowseRepository, query: str, limit: int
         except KeyError:
             continue
         doc = _memory_document(task_id, summary, task, artifacts)
-        snippets = _memory_snippets(doc, query.casefold())
+        snippets = _memory_snippets(doc, effective_query.casefold()) if effective_query else []
         embedding = dict(record.get("embedding", {}))
         if embedding.get("algorithm"):
             strategy = str(embedding.get("algorithm"))
@@ -232,6 +252,8 @@ def build_memory_search(repository: TaskBrowseRepository, query: str, limit: int
 
     return {
         "query": query,
+        "effective_query": effective_query,
+        "subject_scope": subject_scope,
         "limit": limit,
         "strategy": strategy,
         "results": results[:limit],
@@ -683,7 +705,7 @@ def build_subject_memory(repository: TaskBrowseRepository, subject: str, limit: 
     docs = _collect_memory_documents(repository)
     normalized = subject.casefold().strip()
     normalized_subject_key = _normalize_subject_key(subject)
-    search_bundle = build_memory_search(repository, subject, limit=limit)
+    search_bundle = build_memory_search(repository, subject, limit=limit, subject_scope=subject)
     exact_matches = [
         doc
         for doc in docs
@@ -723,6 +745,7 @@ def build_subject_memory(repository: TaskBrowseRepository, subject: str, limit: 
             {"label": "related", "value": len(related_cards)},
         ],
         "search_query": subject,
+        "subject_scope": subject,
         "blocks": [
             {
                 "title": "Recall Context",
@@ -757,7 +780,9 @@ def build_task_memory_context(repository: TaskBrowseRepository, task_id: str, li
     latest_extraction = _latest_extraction(task)
     learned_facts = _learned_facts_from_task(task)
     query = subject or prompt
-    search_results = build_memory_search(repository, query, limit=limit)["results"] if query else []
+    search_results = (
+        build_memory_search(repository, query, limit=limit, subject_scope=subject or None)["results"] if query else []
+    )
     related_cards = [
         _memory_task_card(result, href=f"/memory/tasks/{result['task_id']}")
         for result in search_results
@@ -786,6 +811,7 @@ def build_task_memory_context(repository: TaskBrowseRepository, task_id: str, li
             {"label": "related", "value": len(related_cards)},
         ],
         "search_query": query,
+        "subject_scope": subject or None,
         "blocks": [
             {
                 "title": "Task Snapshot",
