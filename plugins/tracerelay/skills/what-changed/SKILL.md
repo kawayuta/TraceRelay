@@ -26,4 +26,5 @@ Use this skill when the request sounds like:
 ## Rule
 
 Prefer runtime evidence and lineage over a guessed narrative.
+When present, surface `initial_family`, the final `family`, and any `family_revised` event before discussing schema evolution.
 If the user wants to know what to do next, use `plan_next_step` instead of inventing a free-form action plan.

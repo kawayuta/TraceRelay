@@ -16,6 +16,13 @@ class StructuredLLM(Protocol):
     def interpret_task(self, spec: TaskSpec) -> dict[str, Any]:
         ...
 
+    def review_task_interpretation(
+        self,
+        spec: TaskSpec,
+        interpretation: TaskInterpretation,
+    ) -> dict[str, Any]:
+        ...
+
     def build_initial_schema(self, interpretation: TaskInterpretation) -> dict[str, Any]:
         ...
 
@@ -312,6 +319,48 @@ class _PromptDrivenStructuredLLM:
             ),
         )
 
+    def review_task_interpretation(
+        self,
+        spec: TaskSpec,
+        interpretation: TaskInterpretation,
+    ) -> dict[str, Any]:
+        return self.client.complete_json(
+            system_prompt=(
+                "TASK_INTERPRETATION_FAMILY_REVIEW\n"
+                "Return JSON with keys: family, family_rationale.\n"
+                "Re-evaluate only the abstract schema family for this task.\n"
+                "Use the prompt, resolved_subject, subject_candidates, intent, requested_fields, "
+                "requested_relations, scope_hints, and task_shape.\n"
+                "Ignore historical family frequencies, user profile preferences, and stale memory.\n"
+                "Do not anchor on the current_family label if the requested schema shape points elsewhere.\n"
+                "Use a short snake_case type label such as organization, media_work, policy, "
+                "system_incident, relationship, franchise, supply_chain_relation.\n"
+                "Prefer the most specific stable family that matches the requested fields and relations.\n"
+                "Use organization only for company or organization profiles, operations, and org-linked relations.\n"
+                "Use system_incident only for outage, failure, root cause, impact, timeline, or prevention tasks.\n"
+                "Use policy for policy packages, implementing bodies, funding, metrics, or evaluation frameworks.\n"
+                "Use media_work for titles, franchises, episodes, chronology, staff, characters, music, or viewing order.\n"
+                "Use relationship for tasks centered on two or more entities and their dependency or linkage."
+            ),
+            schema_name="task_interpretation_family_review",
+            schema=_task_interpretation_family_review_schema(),
+            user_prompt=json.dumps(
+                {
+                    "prompt": spec.prompt,
+                    "locale": spec.locale,
+                    "current_family": interpretation.family,
+                    "resolved_subject": interpretation.resolved_subject,
+                    "subject_candidates": list(interpretation.subject_candidates),
+                    "intent": interpretation.intent,
+                    "requested_fields": list(interpretation.requested_fields),
+                    "requested_relations": list(interpretation.requested_relations),
+                    "scope_hints": list(interpretation.scope_hints),
+                    "task_shape": interpretation.task_shape,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
     def build_initial_schema(self, interpretation: TaskInterpretation) -> dict[str, Any]:
         return self.client.complete_json(
             system_prompt=(
@@ -566,6 +615,18 @@ def _task_interpretation_schema() -> dict[str, Any]:
             "task_shape",
             "locale",
         ],
+    }
+
+
+def _task_interpretation_family_review_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "family": {"type": "string"},
+            "family_rationale": {"type": "string"},
+        },
+        "required": ["family", "family_rationale"],
     }
 
 

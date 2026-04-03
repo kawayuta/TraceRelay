@@ -13,6 +13,7 @@ Task-first runtime for schema evolution, shared memory, and gap-driven agent wor
 TraceRelay is a local-first system that lets an LLM or agent:
 
 - interpret a task and resolve the subject,
+- recheck the abstract schema family when the requested shape points to a better fit,
 - reuse prior memory before taking the next step,
 - generate or reuse a schema,
 - extract structured information,
@@ -188,35 +189,37 @@ flowchart TD
 
     I --> J[Prompt Memory Recall]
     J --> K[LLM Task Interpretation]
-    K --> L[Subject Memory Recall]
-    L --> M{Existing Schema?}
-    M -->|No| N[LLM Initial Schema]
-    M -->|Yes| O[Reuse Latest Schema]
-    N --> P[LLM Extraction]
-    O --> P
-    P --> Q[Coverage Evaluation]
-    Q -->|Missing Values| R[Re-extract]
-    R --> P
-    Q -->|Missing Structure| S[LLM Schema Evolution]
-    S --> T[Apply New Schema Version]
-    T --> P
-    Q -->|Complete| U[Persist Artifact Lineage]
+    K --> L[LLM Family Recheck]
+    L --> M[Subject Memory Recall]
+    M --> N{Existing Schema?}
+    N -->|No| O[LLM Initial Schema]
+    N -->|Yes| P[Reuse Latest Schema]
+    O --> Q[LLM Extraction]
+    P --> Q
+    Q --> R[Coverage Evaluation]
+    R -->|Missing Values| S[Re-extract]
+    S --> Q
+    R -->|Missing Structure| T[LLM Schema Evolution]
+    T --> U[Apply New Schema Version]
+    U --> Q
+    R -->|Complete| V[Persist Artifact Lineage]
 
-    U --> V1[Analyze Information Gaps]
-    V1 --> V2[Plan Next Step]
-    V2 --> V3[Prepare Search Queries]
+    V --> W1[Analyze Information Gaps]
+    W1 --> W2[Plan Next Step]
+    W2 --> W3[Prepare Search Queries]
 
-    V[LM Studio / Ollama / OpenAI / Gemini] --> K
-    V --> N
-    V --> P
-    V --> S
+    X[LM Studio / Ollama / OpenAI / Gemini] --> K
+    X --> L
+    X --> O
+    X --> Q
+    X --> T
 
-    U --> W[Memory Documents, Task Contexts, User Profiles]
-    U --> X[Project to PostgreSQL]
-    X --> Y[Flask UI and API]
-    X --> Z[MCP tools and resources]
-    E -->|read path| Y
-    H -->|read path| Z
+    V --> Y[Memory Documents, Task Contexts, User Profiles]
+    V --> Z[Project to PostgreSQL]
+    Z --> AA[Flask UI and API]
+    Z --> AB[MCP tools and resources]
+    E -->|read path| AA
+    H -->|read path| AB
 ```
 
 Notes:
@@ -224,6 +227,7 @@ Notes:
 - Codex and Claude Code enter through plugin-managed HTTP MCP.
 - LM Studio enters through TraceRelay's MCP server over HTTP at `/mcp`.
 - MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
+- The interpretation path can revise `family` before schema selection, and `inspect_latest_changes` exposes `initial_family`, the final family, and any `family_revised` event.
 - After each run, TraceRelay can expose gap analysis, next-step planning, and grounded search-query suggestions through MCP and HTTP APIs.
 - Flask is a read surface over PostgreSQL projection, not a second runtime.
 - Memory and lineage are shared across all of these surfaces once a run is persisted.
@@ -587,7 +591,7 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `/api/tasks/<task_id>/gaps`
 - `/api/tasks/<task_id>/queries`
 - `/api/tasks/<task_id>/next-step`
-- `/api/memory/search?q=<query>`
+- `/api/memory/search?q=<query>&subject=<subject>`
 - `/api/memory/profile`
 - `/api/memory/subjects/<subject>`
 - `/api/memory/tasks/<task_id>`
@@ -597,7 +601,7 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `task_evolve`
 - `continue_prior_work`
 - `structure_subject`
-- `inspect_latest_changes`
+- `inspect_latest_changes` - includes retries, family rechecks, and schema updates
 - `analyze_information_gaps`
 - `prepare_search_queries`
 - `plan_next_step`

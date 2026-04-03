@@ -84,6 +84,58 @@ class _FakeHTTPResponse:
         return None
 
 
+class _FamilyReviewSurfaceLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Macross",
+            "subject_candidates": ["Macross"],
+            "family": "organization",
+            "family_rationale": "The first pass kept a generic subject profile.",
+            "requested_fields": ["series", "viewing_order", "characters", "staff"],
+            "requested_relations": [],
+            "scope_hints": ["series", "viewing_order", "characters", "staff"],
+            "task_shape": "subject_analysis",
+            "locale": "ja",
+        }
+
+    def review_task_interpretation(self, spec, interpretation):  # noqa: ANN001
+        return {
+            "family": "media_work",
+            "family_rationale": "The schema shape is centered on a title, viewing order, characters, and staff.",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(interpretation.requested_fields),
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Use the reviewed family for the initial schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        return ExtractionResult(
+            payload={
+                "series": ["main series"],
+                "viewing_order": ["release order"],
+                "characters": ["lead character"],
+                "staff": ["key staff"],
+            },
+            status="success",
+            provider_metadata={"provider": "family-review-surface-test", "attempt": attempt},
+        )
+
+
 def _fake_urlopen(req, timeout=None):  # noqa: ANN001
     payload = json.loads(req.data.decode("utf-8"))
     system_prompt = payload["messages"][0]["content"]
@@ -637,6 +689,24 @@ def test_memory_web_search_supports_exact_subject_scope(fake_llm, tmp_path):
     task_memory_payload = client.get(f"/api/memory/tasks/{google.task_id}").get_json()
     assert task_memory_payload["subject_scope"] == "Google"
     assert any(call["query"] == "Google" and call["subject_key"] == "google" for call in repository.search_calls)
+
+
+def test_inspect_latest_changes_reports_family_recheck(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_FamilyReviewSurfaceLLM(), artifact_store=store)
+    run = runtime.run_task(TaskSpec(prompt="Macrossの視聴順と主要キャラと制作スタッフを整理して"))
+
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    latest_changes = server.call_tool("inspect_latest_changes", {"task_id": run.task_id})
+
+    assert latest_changes["found"] is True
+    assert latest_changes["family_changed"] is True
+    assert latest_changes["initial_family"] == "organization"
+    assert latest_changes["final_family"] == "media_work"
+    assert latest_changes["family_review_rationale"]
+    assert latest_changes["task"]["interpretation"]["initial_family"] == "organization"
+    assert any(event["kind"] == "family_revised" for event in latest_changes["events"])
 
 
 def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):

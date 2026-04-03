@@ -12,7 +12,15 @@ class PromptInterpreter:
 
     def interpret(self, spec: TaskSpec) -> TaskInterpretation:
         payload = self.llm.interpret_task(spec)
-        return replace(_interpret_from_llm(payload), memory_context=dict(spec.memory_context))
+        interpretation = replace(_interpret_from_llm(payload), memory_context=dict(spec.memory_context))
+        reviewer = getattr(self.llm, "review_task_interpretation", None)
+        if not callable(reviewer):
+            return interpretation
+        try:
+            review_payload = reviewer(spec, interpretation)
+            return _apply_family_review(interpretation, review_payload)
+        except LLMError:
+            return interpretation
 
 
 def _interpret_from_llm(payload: dict[str, object]) -> TaskInterpretation:
@@ -37,4 +45,27 @@ def _interpret_from_llm(payload: dict[str, object]) -> TaskInterpretation:
         scope_hints=tuple(str(item) for item in scope_hints),
         task_shape=str(payload.get("task_shape", "subject_analysis")),
         locale=str(payload.get("locale", "auto")),
+    )
+
+
+def _apply_family_review(
+    interpretation: TaskInterpretation,
+    payload: dict[str, object],
+) -> TaskInterpretation:
+    family = str(payload.get("family", "")).strip()
+    if not family:
+        raise LLMError("Task interpretation family review is missing family")
+    rationale = str(payload.get("family_rationale", "")).strip() or interpretation.family_rationale
+    if family == interpretation.family:
+        return replace(
+            interpretation,
+            family_rationale=rationale,
+            family_review_rationale=rationale,
+        )
+    return replace(
+        interpretation,
+        family=family,
+        initial_family=interpretation.family,
+        family_rationale=rationale,
+        family_review_rationale=rationale,
     )

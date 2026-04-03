@@ -39,3 +39,34 @@ def test_prompt_interpretation_resolves_subject_and_family(fake_llm, prompt, exp
     interpretation = interpreter.interpret(TaskSpec(prompt=prompt))
     assert interpretation.resolved_subject == expected_subject
     assert interpretation.family == expected_family
+
+
+class _ReviewingLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Macross",
+            "subject_candidates": ["Macross"],
+            "family": "organization",
+            "family_rationale": "The subject is a known entity, so the initial pass stayed generic.",
+            "requested_fields": ["series", "viewing_order", "characters", "staff"],
+            "requested_relations": [],
+            "scope_hints": ["series", "viewing_order", "characters", "staff"],
+            "task_shape": "subject_analysis",
+            "locale": "ja",
+        }
+
+    def review_task_interpretation(self, spec, interpretation):  # noqa: ANN001
+        return {
+            "family": "media_work",
+            "family_rationale": "The requested fields describe a title, its viewing order, characters, and staff.",
+        }
+
+
+def test_prompt_interpretation_rechecks_family_with_review_layer():
+    interpreter = PromptInterpreter(_ReviewingLLM())
+    interpretation = interpreter.interpret(TaskSpec(prompt="Macrossの視聴順と主要キャラと制作スタッフを整理して"))
+
+    assert interpretation.family == "media_work"
+    assert interpretation.initial_family == "organization"
+    assert interpretation.family_review_rationale

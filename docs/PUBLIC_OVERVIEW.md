@@ -5,6 +5,7 @@ TraceRelay is a local-first runtime for structured research and schema evolution
 It does not treat extraction as a one-shot prompt. Instead, it treats every request as a task that can:
 
 - interpret itself,
+- recheck the abstract schema family when the requested shape points elsewhere,
 - decide or reuse a schema family,
 - extract data,
 - detect missing values,
@@ -38,6 +39,7 @@ Every major step is stored:
 
 - prompt
 - interpretation
+- family recheck when the family changes
 - schema version
 - extraction attempts
 - coverage reports
@@ -63,6 +65,8 @@ The system can recall:
 - user profile memory
 - task memory context
 - prior extraction snapshots
+
+Memory search can also be narrowed with an exact subject scope so one subject's prompt noise does not dominate another subject's recall path.
 
 ### 5. Local-first deployment
 
@@ -111,6 +115,8 @@ Google task recall is currently verified through:
 - Web memory search
 - PostgreSQL-backed browse
 - direct MCP `memory_search("Google")`
+
+Run review is also exposed through MCP `inspect_latest_changes`, including `initial_family`, `final_family`, `family_review_rationale`, and any `family_revised` event.
 
 ## Related Docs
 

@@ -23,21 +23,22 @@ flowchart LR
 flowchart TD
     A[Task Prompt] --> B[Prompt Memory Recall]
     B --> C[LLM Interpretation]
-    C --> D[Subject Memory Recall]
-    D --> E{Latest Schema Exists?}
-    E -->|No| F[LLM Initial Schema]
-    E -->|Yes| G[Reuse Latest Schema]
-    F --> H[LLM Extraction]
-    G --> H
-    H --> I[Coverage Evaluation]
-    I -->|Complete| J[Persist Run]
-    I -->|Missing Values| K[Re-extract]
-    K --> H
-    I -->|Missing Fields or Relations| L[LLM Schema Evolution]
-    L --> M[Apply New Schema Version]
-    M --> H
-    J --> N[Project to PostgreSQL]
-    N --> O[Expose Through Web and MCP]
+    C --> D[LLM Family Recheck]
+    D --> E[Subject Memory Recall]
+    E --> F{Latest Schema Exists?}
+    F -->|No| G[LLM Initial Schema]
+    F -->|Yes| H[Reuse Latest Schema]
+    G --> I[LLM Extraction]
+    H --> I
+    I --> J[Coverage Evaluation]
+    J -->|Complete| K[Persist Run]
+    J -->|Missing Values| L[Re-extract]
+    L --> I
+    J -->|Missing Fields or Relations| M[LLM Schema Evolution]
+    M --> N[Apply New Schema Version]
+    N --> I
+    K --> O[Project to PostgreSQL]
+    O --> P[Expose Through Web and MCP]
 ```
 
 ## Decision Tree
@@ -52,9 +53,13 @@ Task
 ├─ Interpret task with LLM
 │  ├─ intent
 │  ├─ subject
-│  ├─ family
+│  ├─ initial family
 │  ├─ requested fields
 │  └─ requested relations
+├─ Recheck family with LLM
+│  ├─ compare requested schema shape
+│  ├─ keep or revise family
+│  └─ record review rationale
 ├─ Resolve schema
 │  ├─ reuse latest schema for family
 │  └─ or generate initial schema
@@ -159,7 +164,7 @@ The projection is exact-task based and does not depend on task ID prefixes.
 - `/api/tasks/<task_id>/schema`
 - `/api/tasks/<task_id>/events`
 - `/api/tasks/<task_id>/trace`
-- `/api/memory/search?q=<query>`
+- `/api/memory/search?q=<query>&subject=<subject>`
 - `/api/memory/profile`
 - `/api/memory/subjects/<subject>`
 - `/api/memory/tasks/<task_id>`
@@ -189,6 +194,14 @@ The repository currently includes a live-verified Google task that:
 - completed successfully
 - evolved to schema version `2`
 - is discoverable through Web and MCP memory search
+
+`inspect_latest_changes` now also surfaces family review state through:
+
+- `family_changed`
+- `initial_family`
+- `final_family`
+- `family_review_rationale`
+- any `family_revised` task event
 
 ## Notes On Git Hygiene
 

@@ -31,6 +31,8 @@ class TaskInterpretation:
     scope_hints: tuple[str, ...]
     task_shape: str
     locale: str
+    initial_family: str = ""
+    family_review_rationale: str = ""
     memory_context: dict[str, Any] = field(default_factory=dict)
 
 

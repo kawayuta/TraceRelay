@@ -76,7 +76,9 @@ def _artifact_summary(
         details = [
             f"intent: {payload.get('intent', '')}",
             f"resolved_subject: {payload.get('resolved_subject', '')}",
+            f"initial family: {payload.get('initial_family', '') or 'n/a'}",
             f"family rationale: {payload.get('family_rationale', '')}",
+            f"family review: {payload.get('family_review_rationale', '') or 'n/a'}",
             f"requested fields: {_preview_list(requested_fields)}",
             f"requested relations: {_preview_list(requested_relations)}",
         ]
@@ -226,8 +228,10 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
                 "lines": _detail_lines(
                     [
                         f"resolved_subject: {interpretation.get('resolved_subject', '')}",
+                        f"initial family: {interpretation.get('initial_family', '') or 'n/a'}",
                         f"family: {interpretation.get('family', '')}",
                         f"family rationale: {interpretation.get('family_rationale', '')}",
+                        f"family review: {interpretation.get('family_review_rationale', '') or 'n/a'}",
                     ]
                 ),
                 "children": [],

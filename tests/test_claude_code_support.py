@@ -63,6 +63,8 @@ def test_claude_plugin_shares_generic_routing_skills() -> None:
     assert "inspect_latest_changes" in plugin_readme
     assert "plan_next_step" in plugin_readme
     assert "prepare_search_queries" in plugin_readme
+    assert "initial_family" in plugin_readme
     assert "continue this investigation" in continue_skill
     assert "what changed" in changed_skill
+    assert "family_revised" in changed_skill
     assert "structure this" in structure_skill

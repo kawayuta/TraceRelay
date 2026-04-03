@@ -42,6 +42,7 @@ def test_plugin_skills_exist_and_cover_auto_routing() -> None:
     assert "continue what we learned" in routing_skill
     assert "pick up where we left off" in continue_skill
     assert "what changed" in changed_skill
+    assert "family_revised" in changed_skill
     assert "structure this" in structure_skill
 
 

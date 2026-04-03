@@ -53,6 +53,7 @@ class TaskRuntime:
 
     def run_task(self, spec: TaskSpec) -> TaskRun:
         task_id = next_id("task")
+        events: list[TaskEvent] = []
         self._record(
             task_id,
             "task_prompt",
@@ -77,13 +78,35 @@ class TaskRuntime:
                 "intent": interpretation.intent,
                 "resolved_subject": interpretation.resolved_subject,
                 "family": interpretation.family,
+                "initial_family": interpretation.initial_family,
                 "family_rationale": interpretation.family_rationale,
+                "family_review_rationale": interpretation.family_review_rationale,
                 "requested_fields": list(interpretation.requested_fields),
                 "requested_relations": list(interpretation.requested_relations),
                 "scope_hints": list(interpretation.scope_hints),
                 "memory_context": interpretation.memory_context,
             },
         )
+        if interpretation.initial_family and interpretation.initial_family != interpretation.family:
+            review_event = TaskEvent(
+                event_id=next_id("event"),
+                kind="family_revised",
+                details={
+                    "from_family": interpretation.initial_family,
+                    "to_family": interpretation.family,
+                    "reason": interpretation.family_review_rationale or interpretation.family_rationale,
+                },
+            )
+            events.append(review_event)
+            self._record(
+                task_id,
+                "task_event",
+                {
+                    "event_id": review_event.event_id,
+                    "kind": review_event.kind,
+                    "details": review_event.details,
+                },
+            )
         self.memory_store.append_task_context(task_id, task_memory)
 
         subject_key = normalize_subject(interpretation.resolved_subject)
@@ -104,7 +127,6 @@ class TaskRuntime:
 
         extraction_history: list[ExtractionResult] = []
         coverage_history: list[CoverageReport] = []
-        events: list[TaskEvent] = []
         gap = requirement = candidate = review = None
         value_retries = 0
         schema_rounds = 0

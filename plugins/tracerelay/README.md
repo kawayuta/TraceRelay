@@ -49,3 +49,6 @@ Preferred routing in Claude Code:
 - `inspect_latest_changes` for retry, schema-change, or branching review
 - `plan_next_step` before generic search or ad hoc action
 - `prepare_search_queries` when external search is needed
+
+TraceRelay may recheck the abstract `family` after the initial interpretation when the requested schema shape points elsewhere.
+Use `inspect_latest_changes` to see `initial_family`, the final family, and any `family_revised` event.

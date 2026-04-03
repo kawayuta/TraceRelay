@@ -44,7 +44,7 @@ def list_tools() -> list[dict[str, object]]:
         },
         {
             "name": "inspect_latest_changes",
-            "description": "Inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied.",
+            "description": "Inspect what changed in the latest run, including retries, family rechecks, and schema updates.",
         },
         {"name": "task_trace", "description": "Return the task flowchart and decision trace."},
         {"name": "schema_status", "description": "Return schema lineage for a task."},
@@ -152,10 +152,12 @@ class MCPToolbox:
                 result = {"found": False, "reason": "no_tasks"}
                 logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
                 return result
+            task = self.repository.get_task(task_id)
             result = {
                 "found": True,
                 "task_id": task_id,
-                "task": self.repository.get_task(task_id),
+                **_family_review_summary(task),
+                "task": task,
                 "trace": self.repository.get_task_trace(task_id),
                 "schema": self.repository.get_task_schema(task_id),
                 "events": self.repository.get_task_events(task_id),
@@ -436,7 +438,7 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
 
     @mcp.tool(
         name="inspect_latest_changes",
-        description="Inspect what changed in the latest run, why it retried or evolved, and which schema updates were applied.",
+        description="Inspect what changed in the latest run, including retries, family rechecks, and schema updates.",
     )
     def inspect_latest_changes(task_id: str | None = None, subject: str | None = None) -> dict[str, object]:
         return dict(
@@ -597,7 +599,17 @@ def _summarize_arguments(arguments: dict[str, object]) -> dict[str, object]:
 def _summarize_result(result: object) -> dict[str, object]:
     if isinstance(result, dict):
         summary: dict[str, object] = {}
-        for key in ("task_id", "status", "reason", "found", "applied", "recommended_tool"):
+        for key in (
+            "task_id",
+            "status",
+            "reason",
+            "found",
+            "applied",
+            "recommended_tool",
+            "family_changed",
+            "initial_family",
+            "final_family",
+        ):
             if key in result:
                 summary[key] = result[key]
         if "queries" in result and isinstance(result["queries"], list):
@@ -629,3 +641,18 @@ def _summarize_result(result: object) -> dict[str, object]:
     if isinstance(result, list):
         return {"count": len(result)}
     return {"type": type(result).__name__}
+
+
+def _family_review_summary(task: dict[str, object]) -> dict[str, object]:
+    interpretation = dict(task.get("interpretation") or {})
+    final_family = str(interpretation.get("family") or "").strip()
+    initial_family = str(interpretation.get("initial_family") or final_family).strip()
+    family_review_rationale = str(
+        interpretation.get("family_review_rationale") or interpretation.get("family_rationale") or ""
+    ).strip()
+    return {
+        "family_changed": bool(initial_family and final_family and initial_family != final_family),
+        "initial_family": initial_family,
+        "final_family": final_family,
+        "family_review_rationale": family_review_rationale,
+    }

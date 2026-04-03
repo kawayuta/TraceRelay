@@ -175,3 +175,74 @@ def test_subject_lookup_prefers_exact_resolved_subject_over_prompt_mentions(tmp_
     assert result["found"] is True
     assert result["task_id"] == aspi.task_id
     assert result["task"]["interpretation"]["resolved_subject"] == "ASPI"
+
+
+class _FamilyReviewLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Macross",
+            "subject_candidates": ["Macross"],
+            "family": "organization",
+            "family_rationale": "The first pass stayed with a generic subject profile.",
+            "requested_fields": ["series", "viewing_order", "characters", "staff"],
+            "requested_relations": [],
+            "scope_hints": ["series", "viewing_order", "characters", "staff"],
+            "task_shape": "subject_analysis",
+            "locale": "ja",
+        }
+
+    def review_task_interpretation(self, spec, interpretation):  # noqa: ANN001
+        return {
+            "family": "media_work",
+            "family_rationale": "The requested schema is centered on a title, viewing order, characters, and staff.",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(interpretation.requested_fields),
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Use the reviewed family for the initial schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        from tracerelay.models import ExtractionResult
+
+        return ExtractionResult(
+            payload={
+                "series": ["main series"],
+                "viewing_order": ["release order"],
+                "characters": ["lead character"],
+                "staff": ["key staff"],
+            },
+            status="success",
+            provider_metadata={"provider": "family-review-test", "attempt": attempt},
+        )
+
+
+def test_runtime_rechecks_family_before_schema_selection(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_FamilyReviewLLM(), artifact_store=store)
+
+    run = runtime.run_task(TaskSpec(prompt="Macrossの視聴順と主要キャラと制作スタッフを整理して"))
+
+    assert run.interpretation.family == "media_work"
+    assert run.interpretation.initial_family == "organization"
+    assert run.schema.family == "media_work"
+    assert any(event.kind == "family_revised" for event in run.events)
+
+    repository = TaskRepository(store)
+    task = repository.get_task(run.task_id)
+    assert task["interpretation"]["family"] == "media_work"
+    assert task["interpretation"]["initial_family"] == "organization"
