@@ -23,6 +23,38 @@ class TextEmbedder(Protocol):
         ...
 
 
+class ResilientTextEmbedder:
+    def __init__(self, primary: TextEmbedder, fallback: TextEmbedder | None = None) -> None:
+        self.primary = primary
+        self.fallback = fallback or _hash_embedder()
+        self._active: TextEmbedder = primary
+        self._fallback_from = ""
+        self._fallback_reason = ""
+
+    @property
+    def algorithm(self) -> str:
+        return getattr(self._active, "algorithm", "hash_vector_v1")
+
+    @property
+    def fallback_from(self) -> str:
+        return self._fallback_from
+
+    @property
+    def fallback_reason(self) -> str:
+        return self._fallback_reason
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        if self._active is self.fallback:
+            return self.fallback.embed(text)
+        try:
+            return self.primary.embed(text)
+        except EmbeddingError as exc:
+            self._fallback_from = getattr(self.primary, "algorithm", "")
+            self._fallback_reason = str(exc)
+            self._active = self.fallback
+            return self.fallback.embed(text)
+
+
 @dataclass(frozen=True)
 class LMStudioEmbeddingConfig:
     base_url: str
@@ -262,6 +294,12 @@ def embedding_record(text: str, embedder: TextEmbedder | None = None) -> dict[st
     model = getattr(active, "config", None)
     if model is not None:
         record["model"] = getattr(model, "model", "")
+    fallback_from = getattr(active, "fallback_from", "")
+    if fallback_from:
+        record["fallback_from"] = fallback_from
+    fallback_reason = getattr(active, "fallback_reason", "")
+    if fallback_reason:
+        record["fallback_reason"] = fallback_reason
     return record
 
 
@@ -300,11 +338,13 @@ def embedder_from_env() -> TextEmbedder:
             if explicit_provider == "openai":
                 raise EmbeddingError("TRACERELAY_OPENAI_API_KEY is required for openai embeddings")
             return _hash_embedder()
-        return _openai_embedder(
-            api_key,
-            model,
-            base_url,
-            float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "600")),
+        return _resilient_embedder(
+            _openai_embedder(
+                api_key,
+                model,
+                base_url,
+                float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "600")),
+            )
         )
     if provider == "gemini":
         api_key = os.getenv("TRACERELAY_GEMINI_API_KEY", "").strip()
@@ -314,11 +354,13 @@ def embedder_from_env() -> TextEmbedder:
             if explicit_provider == "gemini":
                 raise EmbeddingError("TRACERELAY_GEMINI_API_KEY is required for gemini embeddings")
             return _hash_embedder()
-        return _gemini_embedder(
-            api_key,
-            model,
-            base_url,
-            float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "600")),
+        return _resilient_embedder(
+            _gemini_embedder(
+                api_key,
+                model,
+                base_url,
+                float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "600")),
+            )
         )
     if provider == "ollama":
         base_url = os.getenv("TRACERELAY_OLLAMA_BASE_URL")
@@ -328,7 +370,7 @@ def embedder_from_env() -> TextEmbedder:
         model = os.getenv("TRACERELAY_OLLAMA_EMBEDDING_MODEL") or _detect_ollama_embedding_model(base_url, timeout_s)
         if not model:
             return _hash_embedder()
-        return _ollama_embedder(base_url, model, timeout_s)
+        return _resilient_embedder(_ollama_embedder(base_url, model, timeout_s))
 
     base_url = os.getenv("TRACERELAY_LM_STUDIO_BASE_URL")
     if not base_url:
@@ -337,7 +379,7 @@ def embedder_from_env() -> TextEmbedder:
     model = os.getenv("TRACERELAY_LM_STUDIO_EMBEDDING_MODEL") or _detect_lmstudio_embedding_model(base_url, timeout_s)
     if not model:
         return _hash_embedder()
-    return _lmstudio_embedder(base_url, model, timeout_s)
+    return _resilient_embedder(_lmstudio_embedder(base_url, model, timeout_s))
 
 
 def _infer_embedding_provider_from_env() -> str:
@@ -385,6 +427,12 @@ def _gemini_embedder(api_key: str, model: str, base_url: str, timeout_s: float) 
     return GeminiTextEmbedder(
         GeminiEmbeddingConfig(api_key=api_key, model=model, base_url=base_url, timeout_s=timeout_s)
     )
+
+
+def _resilient_embedder(primary: TextEmbedder) -> TextEmbedder:
+    if getattr(primary, "algorithm", "") == "hash_vector_v1":
+        return primary
+    return ResilientTextEmbedder(primary, _hash_embedder())
 
 
 @lru_cache(maxsize=8)

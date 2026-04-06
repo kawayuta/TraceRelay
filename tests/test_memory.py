@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from unittest.mock import patch
+from urllib.error import URLError
 
 from tracerelay.embeddings import (
     EmbeddingError,
@@ -15,6 +16,7 @@ from tracerelay.embeddings import (
     OllamaEmbeddingConfig,
     OllamaTextEmbedder,
     clear_embedding_caches,
+    embedding_record,
     embedder_from_env,
 )
 from tracerelay.extraction import Extractor
@@ -409,3 +411,34 @@ def test_embedder_from_env_rejects_claude_embedding_provider():
             assert "does not currently expose a direct embeddings API" in str(exc)
         else:
             raise AssertionError("Expected claude embedding provider to raise EmbeddingError")
+
+
+def test_embedding_record_falls_back_to_hash_when_provider_request_fails():
+    clear_embedding_caches()
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001
+        if req.full_url.endswith("/v1/models"):
+            return _FakeEmbeddingResponse(
+                {
+                    "data": [
+                        {"id": "text-embedding-nomic-embed-text-v1.5"},
+                    ]
+                }
+            )
+        raise URLError("connection refused")
+
+    with patch.dict(
+        os.environ,
+        {
+            "TRACERELAY_LM_STUDIO_BASE_URL": "http://127.0.0.1:1234",
+        },
+        clear=True,
+    ):
+        with patch("tracerelay.embeddings.request.urlopen", fake_urlopen):
+            embedder = embedder_from_env()
+            record = embedding_record("ASPI memory query", embedder)
+
+    assert getattr(embedder, "algorithm", "") == "hash_vector_v1"
+    assert record["algorithm"] == "hash_vector_v1"
+    assert record["fallback_from"] == "lmstudio_embeddings_v1"
+    assert "connection refused" in record["fallback_reason"]
