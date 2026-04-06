@@ -36,6 +36,7 @@ Auto-route into TraceRelay when the user asks for any of the following:
 7. Use `task_trace` immediately after a run when you need to explain how the runtime chose re-extract versus schema evolution.
 8. Use `schema_status` when the user asks which keys or relations were added.
 9. Use `artifact_read` only when you need the raw lineage artifacts.
+10. If `task_evolve`, `structure_subject`, or `continue_prior_work` returns `pending: true`, switch to `task_status` polling with the returned `task_id` or `job_id` instead of reissuing the original call.
 
 ## Constraints
 

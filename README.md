@@ -122,6 +122,7 @@ LM Studio is not a plugin target here. It connects to the running TraceRelay MCP
 Plugin routing is more conservative than direct MCP use, so the plugin relies on TraceRelay-specific skills and MCP settings to decide when to auto-run tools.
 Before using either plugin, start the docker stack so the shared MCP endpoint is live: `docker compose up -d --build postgres web mcp`.
 The plugin is designed to prefer TraceRelay before broad search: first structure or continue the task, then inspect information gaps, then prepare grounded search queries only if external search is still needed.
+Long-running plugin calls may return a background `job_id` instead of blocking until the full run completes. Poll `task_status` with `task_id` or `job_id` when `task_evolve`, `structure_subject`, or `continue_prior_work` returns `pending: true`.
 
 ### Codex
 
@@ -241,6 +242,7 @@ Notes:
 - `inspect_latest_changes` exposes `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, and the latest chosen branch.
 - Runtime decisions now emit a task evidence bundle, family probe scores, strategy probe scores, and telemetry-aware branch snapshots before re-extract or schema evolution proceeds.
 - Schema evolution can now persist deprecation metadata and pruning hints, so stale keys can be marked without losing lineage.
+- Long-running MCP entrypoints now return a background `job_id` and switch to `task_status` polling instead of forcing the client to wait through the whole run.
 - After each run, TraceRelay can expose gap analysis, next-step planning, and grounded search-query suggestions through MCP and HTTP APIs.
 - Flask is a read surface over PostgreSQL projection, not a second runtime.
 - Memory and lineage are shared across all of these surfaces once a run is persisted.
@@ -616,9 +618,10 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 
 ### MCP Tools
 
-- `task_evolve`
-- `continue_prior_work`
-- `structure_subject`
+- `task_evolve` - may return `pending: true` with `job_id` for long runs
+- `task_status` - poll a background run by `task_id` or `job_id`
+- `continue_prior_work` - may return `pending: true` with `job_id` for long runs
+- `structure_subject` - may return `pending: true` with `job_id` for long runs
 - `inspect_latest_changes` - includes retries, family rechecks, and schema updates
 - `analyze_information_gaps`
 - `prepare_search_queries`

@@ -23,6 +23,7 @@ def create_mcp_server(
     repository: TaskBrowseRepository | None = None,
     *,
     sync_dsn: str | None = None,
+    task_wait_timeout_s: float = 20.0,
     host: str = "127.0.0.1",
     port: int = 8000,
 ) -> FastMCP:
@@ -32,6 +33,7 @@ def create_mcp_server(
         store=store,
         repository=active_repository,
         sync_dsn=default_sync_dsn(active_repository, sync_dsn),
+        task_wait_timeout_s=task_wait_timeout_s,
     )
     server = FastMCP(
         name="TraceRelay",
@@ -59,6 +61,7 @@ class TraceRelayMCPServer:
         repository: TaskBrowseRepository | None = None,
         *,
         sync_dsn: str | None = None,
+        task_wait_timeout_s: float = 20.0,
         host: str = "127.0.0.1",
         port: int = 8000,
     ) -> None:
@@ -71,6 +74,7 @@ class TraceRelayMCPServer:
             store,
             self.repository,
             sync_dsn=self.sync_dsn,
+            task_wait_timeout_s=task_wait_timeout_s,
             host=host,
             port=port,
         )

@@ -46,9 +46,11 @@ Preferred routing in Claude Code:
 
 - `structure_subject` for profiling, organizing, mapping, or structuring a subject
 - `continue_prior_work` for follow-up work on the same subject
+- `task_status` when a long-running TraceRelay call returns `pending: true`
 - `inspect_latest_changes` for retry, schema-change, or branching review
 - `plan_next_step` before generic search or ad hoc action
 - `prepare_search_queries` when external search is needed
 
 TraceRelay may recheck the abstract `family` after the initial interpretation when the requested schema shape points elsewhere.
 Use `inspect_latest_changes` to see `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, the selected strategy branch, the latest chosen branch, and controller telemetry from the latest decision.
+If `task_evolve`, `structure_subject`, or `continue_prior_work` returns `pending: true`, poll `task_status` with the returned `task_id` or `job_id` instead of retrying the original request.

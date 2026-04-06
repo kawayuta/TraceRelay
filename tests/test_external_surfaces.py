@@ -4,6 +4,7 @@ import anyio
 import json
 import os
 import socket
+import time
 from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
@@ -241,6 +242,51 @@ class _StrategySurfaceLLM:
             },
             status="success",
             provider_metadata={"provider": "strategy-surface-test", "attempt": attempt},
+        )
+
+
+class _SlowSurfaceLLM:
+    def __init__(self, delay_s: float = 0.05) -> None:
+        self.delay_s = delay_s
+
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Slow Corp",
+            "subject_candidates": ["Slow Corp"],
+            "family": "organization",
+            "family_rationale": "The prompt requests a company profile.",
+            "requested_fields": ["overview"],
+            "requested_relations": [],
+            "scope_hints": ["overview"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Initial schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        time.sleep(self.delay_s)
+        return ExtractionResult(
+            payload={"overview": "Slow Corp overview"},
+            status="success",
+            provider_metadata={"provider": "slow-surface-test", "attempt": attempt},
         )
 
 
@@ -570,6 +616,7 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert isinstance(server.fastmcp, FastMCP)
     assert {tool["name"] for tool in description["tools"]} >= {
         "task_evolve",
+        "task_status",
         "continue_prior_work",
         "structure_subject",
         "inspect_latest_changes",
@@ -584,6 +631,7 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     }
     assert {tool.name for tool in server.list_tools()} >= {
         "task_evolve",
+        "task_status",
         "continue_prior_work",
         "structure_subject",
         "inspect_latest_changes",
@@ -762,6 +810,44 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"
     assert server.read_resource("tracerelay://memory/subjects/Google")["subject"] == "Google"
     assert server.read_resource(f"tracerelay://memory/tasks/{google.task_id}")["task_id"] == google.task_id
+
+
+def test_mcp_long_running_tasks_return_pending_and_can_be_polled(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_SlowSurfaceLLM(delay_s=0.05), artifact_store=store)
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None, task_wait_timeout_s=0.001)
+
+    result = server.call_tool("task_evolve", {"prompt": "Please investigate Slow Corp."})
+
+    assert result["pending"] is True
+    assert result["status"] in {"queued", "running"}
+    assert result["reason"] == "background_execution"
+    assert result["job_id"]
+    assert result["poll_tool"] == "task_status"
+
+    pending_status = server.call_tool("task_status", {"job_id": result["job_id"]})
+    assert pending_status["found"] is True
+    assert pending_status["pending"] is True
+
+    time.sleep(0.08)
+    completed_status = server.call_tool(
+        "task_status",
+        {"task_id": result["task_id"], "job_id": result["job_id"]},
+    )
+    assert completed_status["found"] is True
+    assert completed_status["pending"] is False
+    assert completed_status["job_status"] == "completed"
+    assert completed_status["status"] == "success"
+    assert completed_status["reason"] == "complete"
+
+    structured = server.call_tool(
+        "structure_subject",
+        {"prompt": "Please investigate Slow Corp.", "wait_seconds": 0.001},
+    )
+    assert structured["pending"] is True
+    assert structured["run"]["pending"] is True
+    assert structured["poll_tool"] == "task_status"
 
 
 def test_memory_web_search_supports_exact_subject_scope(fake_llm, tmp_path):

@@ -27,4 +27,5 @@ Use this skill when the request sounds like:
 ## Rule
 
 When the user asks for structured understanding rather than a plain answer, use `structure_subject` first.
+If `structure_subject` returns `pending: true`, poll `task_status` with the returned `task_id` or `job_id` before asking for trace, schema, or artifacts.
 If the user then wants external search or follow-up work, use `plan_next_step` before inventing new queries.

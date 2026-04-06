@@ -56,8 +56,8 @@ class TaskRuntime:
         self.max_value_retries = max_value_retries
         self.max_schema_rounds = max_schema_rounds
 
-    def run_task(self, spec: TaskSpec) -> TaskRun:
-        task_id = next_id("task")
+    def run_task(self, spec: TaskSpec, *, task_id: str | None = None) -> TaskRun:
+        task_id = task_id or next_id("task")
         events: list[TaskEvent] = []
         self._record(
             task_id,

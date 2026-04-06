@@ -28,4 +28,5 @@ Use this skill when the request sounds like:
 ## Rule
 
 If the user clearly expects continuity, prefer `continue_prior_work` before free-form reasoning.
+If `continue_prior_work` returns `pending: true`, poll `task_status` with the returned `task_id` or `job_id` instead of restarting the run.
 Before generic search, use `plan_next_step` and `prepare_search_queries` so the next move is driven by stored facts and open gaps.
