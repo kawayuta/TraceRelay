@@ -303,6 +303,7 @@ def build_task_dashboard(repository: TaskBrowseRepository) -> dict[str, object]:
         schema_versions = list(detail.get("schema_versions") or [])
         extractions = list(detail.get("extractions") or [])
         coverages = list(detail.get("coverage_reports") or [])
+        latest_branch_decision = dict(detail.get("latest_branch_decision") or {})
         latest_coverage = dict(coverages[-1]) if coverages else {}
         latest_extraction = dict(extractions[-1]) if extractions else {}
         attempts = int(run.get("attempts") or len(extractions) or 0)
@@ -318,7 +319,7 @@ def build_task_dashboard(repository: TaskBrowseRepository) -> dict[str, object]:
             families[family] += 1
         attempts_total += attempts
         dominant_issue = str(latest_coverage.get("dominant_issue") or "none")
-        next_action = _task_next_action(run, latest_coverage)
+        next_action = _task_next_action(run, latest_coverage, latest_branch_decision)
         queue_state = _queue_state(status, dominant_issue)
         tasks.append(
             {
@@ -335,7 +336,7 @@ def build_task_dashboard(repository: TaskBrowseRepository) -> dict[str, object]:
                 "queue_state": queue_state,
                 "schema_code": _pretty_json(_schema_code_view(active_schema)) if active_schema else "{}",
                 "latest_key_preview": sorted(dict(latest_extraction.get("payload") or {}).keys())[:8],
-                "branch_summary": _branch_summary_text(run, latest_coverage),
+                "branch_summary": _branch_summary_text(run, latest_coverage, latest_branch_decision),
                 "search_text": " ".join(
                     [
                         str(task.get("prompt", "")),
@@ -447,10 +448,17 @@ def build_trace_operator_view(
     run = dict(task.get("run") or {})
     extractions = list(task.get("extractions") or [])
     coverages = list(task.get("coverage_reports") or [])
+    branch_decisions = list(task.get("branch_decisions") or [])
     schema_versions = list(task.get("schema_versions") or [])
+    strategy_selection = dict(task.get("strategy_selection") or {})
     latest_coverage = dict(coverages[-1]) if coverages else {}
+    latest_branch_decision = dict(task.get("latest_branch_decision") or {})
     latest_schema = dict(schema_versions[-1]) if schema_versions else {}
     latest_extraction = dict(extractions[-1]) if extractions else {}
+    decisions_by_attempt = {
+        int(item.get("attempt") or index): dict(item)
+        for index, item in enumerate(branch_decisions, start=1)
+    }
 
     attempts: list[dict[str, object]] = []
     for index, extraction in enumerate(extractions, start=1):
@@ -468,7 +476,14 @@ def build_trace_operator_view(
                 "missing_values": [str(item) for item in coverage.get("missing_values", [])][:3],
                 "missing_fields": [str(item) for item in coverage.get("missing_fields", [])][:3],
                 "missing_relations": [str(item) for item in coverage.get("missing_relations", [])][:3],
-                "next_action": _attempt_next_action(index, extraction, coverage, run, len(extractions)),
+                "next_action": _attempt_next_action(
+                    index,
+                    extraction,
+                    coverage,
+                    run,
+                    len(extractions),
+                    decisions_by_attempt.get(int(extraction.get("attempt") or index), {}),
+                ),
                 "payload_code": _pretty_json(payload),
                 "coverage_code": _pretty_json(coverage),
                 "missing_preview": _coverage_preview(coverage) or "none",
@@ -488,6 +503,14 @@ def build_trace_operator_view(
         {"label": "reason", "value": str(run.get("reason") or "n/a")},
         {"label": "dominant issue", "value": dominant_issue},
         {"label": "family", "value": str(interpretation.get("family") or "n/a")},
+        {
+            "label": "strategy",
+            "value": str(
+                strategy_selection.get("chosen_branch_type")
+                or latest_branch_decision.get("chosen_branch_type")
+                or "n/a"
+            ).replace("_", " "),
+        },
     ]
     if memory_panel:
         summary_badges.append({"label": "memory profile", "value": str(memory_panel.get("profile_key") or "workspace")})
@@ -501,9 +524,14 @@ def build_trace_operator_view(
         },
         {
             "label": "Branch",
-            "value": dominant_issue.replace("_", " "),
+            "value": str(latest_branch_decision.get("chosen_branch_type") or dominant_issue).replace("_", " "),
             "tone": "schema" if dominant_issue == "schema" else "warning" if dominant_issue == "values" else "neutral",
-            "note": _coverage_preview(latest_coverage) or "No open gap",
+            "note": str(
+                strategy_selection.get("rationale")
+                or latest_branch_decision.get("rationale")
+                or _coverage_preview(latest_coverage)
+                or "No open gap"
+            ),
         },
         {
             "label": "Schema",
@@ -522,7 +550,10 @@ def build_trace_operator_view(
     return {
         "summary_badges": summary_badges,
         "top_cards": top_cards,
-        "why_it_branched": _why_it_branched(run, latest_coverage, latest_schema),
+        "why_it_branched": _why_it_branched(run, latest_coverage, latest_schema, latest_branch_decision),
+        "selected_strategy": str(
+            strategy_selection.get("chosen_branch_type") or latest_branch_decision.get("chosen_branch_type") or ""
+        ),
         "attempts": attempts,
         "schema_deltas": schema_deltas,
         "schema_versions": [
@@ -1032,7 +1063,11 @@ def _attempt_next_action(
     coverage: dict[str, object],
     run: dict[str, object],
     total_attempts: int,
+    branch_decision: dict[str, object],
 ) -> str:
+    chosen_branch = str(branch_decision.get("chosen_branch_type") or "")
+    if chosen_branch:
+        return chosen_branch.replace("_", " ")
     dominant_issue = str(coverage.get("dominant_issue") or "none")
     if dominant_issue == "values":
         return "re-extract"
@@ -1062,7 +1097,10 @@ def _queue_state(status: str, dominant_issue: str) -> str:
     return "neutral"
 
 
-def _task_next_action(run: dict[str, object], coverage: dict[str, object]) -> str:
+def _task_next_action(run: dict[str, object], coverage: dict[str, object], branch_decision: dict[str, object]) -> str:
+    chosen_branch = str(branch_decision.get("chosen_branch_type") or "")
+    if chosen_branch:
+        return chosen_branch.replace("_", " ")
     dominant_issue = str(coverage.get("dominant_issue") or "none")
     reason = str(run.get("reason") or "")
     if dominant_issue == "schema":
@@ -1076,7 +1114,11 @@ def _task_next_action(run: dict[str, object], coverage: dict[str, object]) -> st
     return "review"
 
 
-def _branch_summary_text(run: dict[str, object], coverage: dict[str, object]) -> str:
+def _branch_summary_text(run: dict[str, object], coverage: dict[str, object], branch_decision: dict[str, object]) -> str:
+    chosen_branch = str(branch_decision.get("chosen_branch_type") or "")
+    rationale = str(branch_decision.get("rationale") or "")
+    if chosen_branch:
+        return f"{chosen_branch.replace('_', ' ')}: {rationale or 'controller decision'}"
     dominant_issue = str(coverage.get("dominant_issue") or "none")
     preview = _coverage_preview(coverage)
     if dominant_issue == "schema":
@@ -1137,6 +1179,9 @@ def _schema_code_view(schema: dict[str, object]) -> dict[str, object]:
         "required_fields": schema.get("required_fields", []),
         "optional_fields": schema.get("optional_fields", []),
         "relations": schema.get("relations", []),
+        "deprecated_fields": schema.get("deprecated_fields", []),
+        "deprecated_relations": schema.get("deprecated_relations", []),
+        "pruning_hints": schema.get("pruning_hints", []),
         "rationale": schema.get("rationale", ""),
     }
 
@@ -1145,6 +1190,7 @@ def _why_it_branched(
     run: dict[str, object],
     coverage: dict[str, object],
     schema: dict[str, object],
+    branch_decision: dict[str, object],
 ) -> list[dict[str, str]]:
     dominant_issue = str(coverage.get("dominant_issue") or "none")
     missing_values = [str(item) for item in coverage.get("missing_values", [])]
@@ -1156,8 +1202,22 @@ def _why_it_branched(
         {"label": "missing fields", "value": str(len(missing_fields))},
         {"label": "missing relations", "value": str(len(missing_relations))},
         {"label": "active schema", "value": f"v{schema.get('version', 'n/a')}"},
-        {"label": "next state", "value": str(run.get("reason") or "n/a").replace("_", " ")},
+        {
+            "label": "chosen branch",
+            "value": str(branch_decision.get("chosen_branch_type") or run.get("reason") or "n/a").replace("_", " "),
+        },
     ]
+    if branch_decision:
+        items.append({"label": "completion rate", "value": str(branch_decision.get("completion_rate") or 0)})
+    deprecated_fields = [str(item) for item in schema.get("deprecated_fields", [])]
+    deprecated_relations = [str(item) for item in schema.get("deprecated_relations", [])]
+    pruning_hints = [str(item) for item in schema.get("pruning_hints", [])]
+    if deprecated_fields:
+        items.append({"label": "deprecated fields", "value": ", ".join(deprecated_fields[:2])})
+    if deprecated_relations:
+        items.append({"label": "deprecated relations", "value": ", ".join(deprecated_relations[:2])})
+    if pruning_hints:
+        items.append({"label": "pruning hints", "value": ", ".join(pruning_hints[:2])})
     if missing_values:
         items.append({"label": "values gap", "value": ", ".join(missing_values[:2])})
     elif missing_fields or missing_relations:
@@ -1170,9 +1230,15 @@ def _schema_delta(previous: dict[str, object] | None, current: dict[str, object]
     previous_required = set(str(item) for item in (previous or {}).get("required_fields", []))
     previous_optional = set(str(item) for item in (previous or {}).get("optional_fields", []))
     previous_relations = set(str(item) for item in (previous or {}).get("relations", []))
+    previous_deprecated_fields = set(str(item) for item in (previous or {}).get("deprecated_fields", []))
+    previous_deprecated_relations = set(str(item) for item in (previous or {}).get("deprecated_relations", []))
+    previous_pruning_hints = set(str(item) for item in (previous or {}).get("pruning_hints", []))
     current_required = [str(item) for item in current.get("required_fields", [])]
     current_optional = [str(item) for item in current.get("optional_fields", [])]
     current_relations = [str(item) for item in current.get("relations", [])]
+    current_deprecated_fields = [str(item) for item in current.get("deprecated_fields", [])]
+    current_deprecated_relations = [str(item) for item in current.get("deprecated_relations", [])]
+    current_pruning_hints = [str(item) for item in current.get("pruning_hints", [])]
     return {
         "version": current.get("version"),
         "schema_id": str(current.get("schema_id", "")),
@@ -1180,6 +1246,11 @@ def _schema_delta(previous: dict[str, object] | None, current: dict[str, object]
         "added_required": [item for item in current_required if item not in previous_required],
         "added_optional": [item for item in current_optional if item not in previous_optional],
         "added_relations": [item for item in current_relations if item not in previous_relations],
+        "added_deprecated_fields": [item for item in current_deprecated_fields if item not in previous_deprecated_fields],
+        "added_deprecated_relations": [
+            item for item in current_deprecated_relations if item not in previous_deprecated_relations
+        ],
+        "added_pruning_hints": [item for item in current_pruning_hints if item not in previous_pruning_hints],
         "rationale": str(current.get("rationale", "")),
     }
 

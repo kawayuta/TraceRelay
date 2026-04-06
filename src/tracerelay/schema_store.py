@@ -38,10 +38,13 @@ class ArtifactSchemaStore:
         payload: dict[str, object],
         parent: SchemaVersion | None,
     ) -> SchemaVersion:
-        required_fields, optional_fields, relations = _normalize_schema_keys(
+        required_fields, optional_fields, relations, deprecated_fields, deprecated_relations, pruning_hints = _normalize_schema_keys(
             payload.get("required_fields", []),
             payload.get("optional_fields", []),
             payload.get("relations", []),
+            payload.get("deprecated_fields", []),
+            payload.get("deprecated_relations", []),
+            payload.get("pruning_hints", []),
         )
         schema = SchemaVersion(
             schema_id=next_id("schema"),
@@ -52,6 +55,9 @@ class ArtifactSchemaStore:
             required_fields=required_fields,
             optional_fields=optional_fields,
             relations=relations,
+            deprecated_fields=deprecated_fields,
+            deprecated_relations=deprecated_relations,
+            pruning_hints=pruning_hints,
             rationale=str(payload.get("rationale", "")),
         )
         self.artifact_store.append(
@@ -75,10 +81,13 @@ class ArtifactSchemaStore:
         )
 
     def _schema_from_payload(self, payload: dict[str, object]) -> SchemaVersion:
-        required_fields, optional_fields, relations = _normalize_schema_keys(
+        required_fields, optional_fields, relations, deprecated_fields, deprecated_relations, pruning_hints = _normalize_schema_keys(
             payload.get("required_fields", []),
             payload.get("optional_fields", []),
             payload.get("relations", []),
+            payload.get("deprecated_fields", []),
+            payload.get("deprecated_relations", []),
+            payload.get("pruning_hints", []),
         )
         return SchemaVersion(
             schema_id=str(payload["schema_id"]),
@@ -89,6 +98,9 @@ class ArtifactSchemaStore:
             required_fields=required_fields,
             optional_fields=optional_fields,
             relations=relations,
+            deprecated_fields=deprecated_fields,
+            deprecated_relations=deprecated_relations,
+            pruning_hints=pruning_hints,
             rationale=str(payload.get("rationale", "")),
         )
 
@@ -97,12 +109,20 @@ def _normalize_schema_keys(
     required_fields: object,
     optional_fields: object,
     relations: object,
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    deprecated_fields: object = (),
+    deprecated_relations: object = (),
+    pruning_hints: object = (),
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     required = _unique_names(required_fields)
     optional = tuple(name for name in _unique_names(optional_fields) if name not in set(required))
     relation_set = set(required) | set(optional)
     relation_values = tuple(name for name in _unique_names(relations) if name not in relation_set)
-    return required, optional, relation_values
+    deprecated_field_values = tuple(name for name in _unique_names(deprecated_fields) if name in relation_set)
+    deprecated_relation_values = tuple(
+        name for name in _unique_names(deprecated_relations) if name in set(relation_values)
+    )
+    pruning_hint_values = _unique_names(pruning_hints)
+    return required, optional, relation_values, deprecated_field_values, deprecated_relation_values, pruning_hint_values
 
 
 def _unique_names(values: object) -> tuple[str, ...]:

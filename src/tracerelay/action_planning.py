@@ -12,6 +12,9 @@ def build_information_gap_analysis(repository: TaskBrowseRepository, task_id: st
     coverage = _latest_coverage(task)
     schema = _latest_schema(task)
     extraction = _latest_extraction(task)
+    latest_branch_decision = dict(task.get("latest_branch_decision") or {})
+    family_selection = dict(task.get("family_selection") or {})
+    strategy_selection = dict(task.get("strategy_selection") or {})
     payload = dict(extraction.get("payload") or {})
     known_facts = _learned_facts_from_payload(payload)
     missing_values = _string_list(coverage.get("missing_values", []))
@@ -35,6 +38,15 @@ def build_information_gap_analysis(repository: TaskBrowseRepository, task_id: st
         "attempts": int(run.get("attempts") or len(task.get("extractions") or []) or 0),
         "schema_version": int(schema.get("version") or 0),
         "dominant_issue": dominant_issue,
+        "selected_family": str(family_selection.get("chosen_family") or family or ""),
+        "selected_strategy": str(
+            strategy_selection.get("chosen_branch_type") or latest_branch_decision.get("chosen_branch_type") or ""
+        ),
+        "chosen_branch_type": str(latest_branch_decision.get("chosen_branch_type") or ""),
+        "branch_completion_rate": latest_branch_decision.get("completion_rate"),
+        "branch_rationale": str(latest_branch_decision.get("rationale") or ""),
+        "strategy_rationale": str(strategy_selection.get("rationale") or latest_branch_decision.get("rationale") or ""),
+        "branch_telemetry": dict(latest_branch_decision.get("telemetry") or {}),
         "missing_values": missing_values,
         "missing_fields": missing_fields,
         "missing_relations": missing_relations,
@@ -122,6 +134,7 @@ def build_next_step_plan(
     analysis = build_information_gap_analysis(repository, task_id)
     query_plan = build_search_query_plan(repository, task_id, limit=limit)
     dominant_issue = str(analysis.get("dominant_issue") or "none")
+    chosen_branch_type = str(analysis.get("chosen_branch_type") or "")
     status = str(analysis.get("status") or "")
     reason = str(analysis.get("reason") or "")
 
@@ -136,7 +149,7 @@ def build_next_step_plan(
         "Do not ignore facts already stored in TraceRelay memory when preparing the next query.",
     ]
 
-    if dominant_issue == "schema":
+    if chosen_branch_type == "schema_evolution" or dominant_issue == "schema":
         recommended_tool = "continue_prior_work"
         actions = [
             _action(
@@ -155,7 +168,7 @@ def build_next_step_plan(
                 "Bring new evidence back into TraceRelay so schema evolution and re-extraction stay traceable.",
             ),
         ]
-    elif dominant_issue == "values":
+    elif chosen_branch_type == "reextract" or dominant_issue == "values":
         recommended_tool = "continue_prior_work"
         actions = [
             _action(
@@ -174,7 +187,7 @@ def build_next_step_plan(
                 "Use the retrieved evidence to refill missing values instead of widening the schema.",
             ),
         ]
-    elif status == "success" and reason == "complete":
+    elif chosen_branch_type == "complete" or (status == "success" and reason == "complete"):
         recommended_tool = "inspect_latest_changes"
         actions = [
             _action(
@@ -207,9 +220,13 @@ def build_next_step_plan(
         "task_id": task_id,
         "subject": analysis["subject"],
         "family": analysis["family"],
+        "selected_family": analysis["selected_family"],
+        "selected_strategy": analysis["selected_strategy"],
         "status": analysis["status"],
         "reason": analysis["reason"],
         "dominant_issue": dominant_issue,
+        "chosen_branch_type": chosen_branch_type,
+        "branch_rationale": analysis["branch_rationale"],
         "recommended_tool": recommended_tool,
         "pre_search_checks": pre_search_checks,
         "recommended_actions": actions,

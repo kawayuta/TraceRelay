@@ -6,11 +6,14 @@ It does not treat extraction as a one-shot prompt. Instead, it treats every requ
 
 - interpret itself,
 - recheck the abstract schema family when the requested shape points elsewhere,
+- probe both the initial and reviewed family when the family is still ambiguous,
 - decide or reuse a schema family,
 - extract data,
 - detect missing values,
 - detect missing structure,
+- probe competing continuation strategies before committing,
 - evolve the schema,
+- mark stale keys with deprecation metadata and pruning hints,
 - re-run extraction,
 - persist the full lineage for review.
 
@@ -31,7 +34,7 @@ That combination is the system's real advantage.
 
 ### 1. Self-evolving schema loop
 
-The runtime can add new keys and relations when the current schema is insufficient.
+The runtime can add new keys and relations when the current schema is insufficient, and it can also mark stale keys as deprecated without deleting lineage.
 
 ### 2. Full lineage, not just final payload
 
@@ -40,6 +43,8 @@ Every major step is stored:
 - prompt
 - interpretation
 - family recheck when the family changes
+- family probe and family selection when reviewed and initial families compete
+- strategy probe and strategy selection when value or schema branches compete
 - schema version
 - extraction attempts
 - coverage reports
@@ -116,7 +121,7 @@ Google task recall is currently verified through:
 - PostgreSQL-backed browse
 - direct MCP `memory_search("Google")`
 
-Run review is also exposed through MCP `inspect_latest_changes`, including `initial_family`, `final_family`, `family_review_rationale`, and any `family_revised` event.
+Run review is also exposed through MCP `inspect_latest_changes`, including `initial_family`, `final_family`, `family_review_rationale`, any `family_revised` or `family_branch_selected` event, the selected strategy branch, the latest chosen branch, and telemetry attached to the last controller snapshot.
 
 ## Related Docs
 

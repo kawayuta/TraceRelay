@@ -11,8 +11,13 @@ class CoverageEvaluator:
         extraction: ExtractionResult,
     ) -> CoverageReport:
         payload = extraction.payload
-        supported_fields = set(schema.required_fields + schema.optional_fields)
-        supported_relations = set(schema.relations)
+        deprecated_fields = set(schema.deprecated_fields)
+        deprecated_relations = set(schema.deprecated_relations)
+        active_required = tuple(field for field in schema.required_fields if field not in deprecated_fields)
+        active_optional = tuple(field for field in schema.optional_fields if field not in deprecated_fields)
+        active_relations = tuple(relation for relation in schema.relations if relation not in deprecated_relations)
+        supported_fields = set(active_required + active_optional)
+        supported_relations = set(active_relations)
         supported_keys = supported_fields | supported_relations
         requested_fields = set(interpretation.requested_fields)
         requested_relations = set(interpretation.requested_relations)
@@ -21,10 +26,10 @@ class CoverageEvaluator:
         missing_relations = tuple(sorted(requested_relations - supported_keys))
 
         missing_values: list[str] = []
-        for field_name in sorted(set(schema.required_fields) | (requested_fields & supported_keys)):
+        for field_name in sorted(set(active_required) | (requested_fields & supported_keys)):
             if not _has_value(payload.get(field_name)):
                 missing_values.append(field_name)
-        for relation_name in sorted(requested_relations & supported_keys):
+        for relation_name in sorted(requested_relations & set(active_relations)):
             if not _has_value(payload.get(relation_name)):
                 missing_values.append(relation_name)
 

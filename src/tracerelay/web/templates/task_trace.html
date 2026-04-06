@@ -68,6 +68,9 @@
             <div class="summary-list-row"><span>Attempts</span><strong>{{ trace.summary.attempts or 0 }}</strong></div>
             <div class="summary-list-row"><span>Schema rounds</span><strong>{{ trace.summary.schema_rounds or 0 }}</strong></div>
             <div class="summary-list-row"><span>Schema versions</span><strong>{{ trace.schema_lineage|length }}</strong></div>
+            <div class="summary-list-row"><span>Selected family</span><strong>{{ trace.summary.selected_family or trace.summary.family or "n/a" }}</strong></div>
+            <div class="summary-list-row"><span>Selected strategy</span><strong>{{ trace.summary.selected_strategy or trace.summary.chosen_branch_type or "n/a" }}</strong></div>
+            <div class="summary-list-row"><span>Chosen branch</span><strong>{{ trace.summary.chosen_branch_type or "n/a" }}</strong></div>
           </div>
         </section>
 

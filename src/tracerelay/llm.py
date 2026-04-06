@@ -53,14 +53,14 @@ class LLMError(RuntimeError):
 class LMStudioConfig:
     base_url: str
     model: str
-    timeout_s: float = 360.0
+    timeout_s: float = 600.0
 
 
 @dataclass(frozen=True)
 class OllamaConfig:
     base_url: str
     model: str
-    timeout_s: float = 360.0
+    timeout_s: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class OpenAIConfig:
     api_key: str
     model: str
     base_url: str = "https://api.openai.com"
-    timeout_s: float = 360.0
+    timeout_s: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ class GeminiConfig:
     api_key: str
     model: str
     base_url: str = "https://generativelanguage.googleapis.com"
-    timeout_s: float = 360.0
+    timeout_s: float = 600.0
 
 
 class LMStudioClient:
@@ -365,11 +365,14 @@ class _PromptDrivenStructuredLLM:
         return self.client.complete_json(
             system_prompt=(
                 "INITIAL_SCHEMA\n"
-                "Return JSON with keys: family, required_fields, optional_fields, relations, rationale.\n"
+                "Return JSON with keys: family, required_fields, optional_fields, relations, "
+                "deprecated_fields, deprecated_relations, pruning_hints, rationale.\n"
                 "family must remain the same abstract schema class from the interpretation step.\n"
                 "All fields and relations must be atomic snake_case keys.\n"
                 "Create the narrowest viable schema for this task.\n"
                 "Do not add speculative fields or relations that are not needed for the requested task.\n"
+                "deprecated_fields and deprecated_relations should normally be empty on the first schema.\n"
+                "pruning_hints may explain future cleanup pressure but must not remove keys.\n"
                 "Use memory_context for prior learned details about the same subject when it helps narrow the schema."
             ),
             schema_name="initial_schema",
@@ -397,12 +400,15 @@ class _PromptDrivenStructuredLLM:
         return self.client.complete_json(
             system_prompt=(
                 "EVOLVE_SCHEMA\n"
-                "Return JSON with keys: family, required_fields, optional_fields, relations, rationale. "
-                "Only propose additive changes.\n"
+                "Return JSON with keys: family, required_fields, optional_fields, relations, "
+                "deprecated_fields, deprecated_relations, pruning_hints, rationale. "
+                "You may propose additive changes and non-destructive deprecation hints.\n"
                 "family must remain the same abstract schema class from the interpretation step.\n"
                 "All fields and relations must be atomic snake_case keys.\n"
                 "Only add keys that directly resolve the current missing_fields and missing_relations.\n"
                 "Do not add unrelated enrichment fields, metadata fields, historical fields, or nice-to-have keys.\n"
+                "Use deprecated_fields or deprecated_relations only for keys already in the current schema that appear noisy, redundant, or no longer worth enforcing.\n"
+                "Use pruning_hints to explain cleanup pressure without deleting keys.\n"
                 "If no schema change is needed, return the current schema unchanged.\n"
                 "Use memory_context to reuse prior learned subject details before expanding the schema."
             ),
@@ -510,7 +516,7 @@ def llm_from_env() -> StructuredLLM | None:
                 OllamaConfig(
                     base_url=base_url,
                     model=model,
-                    timeout_s=float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "360")),
+                    timeout_s=float(os.getenv("TRACERELAY_OLLAMA_TIMEOUT", "600")),
                 )
             )
         )
@@ -526,7 +532,7 @@ def llm_from_env() -> StructuredLLM | None:
                     api_key=api_key,
                     model=model,
                     base_url=os.getenv("TRACERELAY_OPENAI_BASE_URL", "https://api.openai.com"),
-                    timeout_s=float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "360")),
+                    timeout_s=float(os.getenv("TRACERELAY_OPENAI_TIMEOUT", "600")),
                 )
             )
         )
@@ -545,7 +551,7 @@ def llm_from_env() -> StructuredLLM | None:
                         "TRACERELAY_GEMINI_BASE_URL",
                         "https://generativelanguage.googleapis.com",
                     ),
-                    timeout_s=float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "360")),
+                    timeout_s=float(os.getenv("TRACERELAY_GEMINI_TIMEOUT", "600")),
                 )
             )
         )
@@ -559,7 +565,7 @@ def llm_from_env() -> StructuredLLM | None:
             LMStudioConfig(
                 base_url=base_url,
                 model=model,
-                timeout_s=float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "360")),
+                timeout_s=float(os.getenv("TRACERELAY_LM_STUDIO_TIMEOUT", "600")),
             )
         )
     )
@@ -639,14 +645,35 @@ def _schema_definition_schema() -> dict[str, Any]:
             "required_fields": _string_array_schema(),
             "optional_fields": _string_array_schema(),
             "relations": _string_array_schema(),
+            "deprecated_fields": _string_array_schema(),
+            "deprecated_relations": _string_array_schema(),
+            "pruning_hints": _string_array_schema(),
             "rationale": {"type": "string"},
         },
-        "required": ["family", "required_fields", "optional_fields", "relations", "rationale"],
+        "required": [
+            "family",
+            "required_fields",
+            "optional_fields",
+            "relations",
+            "deprecated_fields",
+            "deprecated_relations",
+            "pruning_hints",
+            "rationale",
+        ],
     }
 
 
 def _task_extraction_schema(schema: SchemaVersion) -> dict[str, Any]:
-    keys = list(dict.fromkeys(schema.required_fields + schema.optional_fields + schema.relations))
+    deprecated_fields = set(schema.deprecated_fields)
+    deprecated_relations = set(schema.deprecated_relations)
+    active_fields = [key for key in schema.required_fields + schema.optional_fields if key not in deprecated_fields]
+    active_field_set = set(active_fields)
+    active_relations = [
+        key
+        for key in schema.relations
+        if key not in deprecated_relations and key not in deprecated_fields and key not in active_field_set
+    ]
+    keys = list(dict.fromkeys(active_fields + active_relations))
     value_schema = {
         "anyOf": [
             {"type": "string"},

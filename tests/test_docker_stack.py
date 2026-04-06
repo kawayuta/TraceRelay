@@ -46,3 +46,19 @@ def test_compose_includes_postgres_web_and_mcp_services() -> None:
     assert '"5080:5080"' in compose
     assert '"5064:5063"' in compose
     assert "host.docker.internal:host-gateway" in compose
+
+
+def test_compose_sets_backend_timeouts_to_ten_minutes() -> None:
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    assert "TRACERELAY_LM_STUDIO_TIMEOUT: ${TRACERELAY_LM_STUDIO_TIMEOUT:-600}" in compose
+    assert "TRACERELAY_OLLAMA_TIMEOUT: ${TRACERELAY_OLLAMA_TIMEOUT:-600}" in compose
+    assert "TRACERELAY_OPENAI_TIMEOUT: ${TRACERELAY_OPENAI_TIMEOUT:-600}" in compose
+    assert "TRACERELAY_GEMINI_TIMEOUT: ${TRACERELAY_GEMINI_TIMEOUT:-600}" in compose
+
+
+def test_env_example_sets_backend_timeouts_to_ten_minutes() -> None:
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "TRACERELAY_LM_STUDIO_TIMEOUT=600" in env_example
+    assert "TRACERELAY_OLLAMA_TIMEOUT=600" in env_example
+    assert "TRACERELAY_OPENAI_TIMEOUT=600" in env_example
+    assert "TRACERELAY_GEMINI_TIMEOUT=600" in env_example

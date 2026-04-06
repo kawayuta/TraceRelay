@@ -581,6 +581,9 @@ def _assemble_task(task_id: str, artifacts: list[dict[str, object]]) -> dict[str
     latest_by_type: dict[str, dict[str, object]] = {}
     extractions: list[dict[str, object]] = []
     coverages: list[dict[str, object]] = []
+    branch_decisions: list[dict[str, object]] = []
+    family_probes: list[dict[str, object]] = []
+    strategy_probes: list[dict[str, object]] = []
     events: list[dict[str, object]] = []
     schema_versions: list[dict[str, object]] = []
     for artifact in artifacts:
@@ -591,6 +594,12 @@ def _assemble_task(task_id: str, artifacts: list[dict[str, object]]) -> dict[str
             extractions.append(payload)
         elif artifact_type == "coverage_report":
             coverages.append(payload)
+        elif artifact_type == "task_family_probe":
+            family_probes.append(payload)
+        elif artifact_type == "task_strategy_probe":
+            strategy_probes.append(payload)
+        elif artifact_type == "task_branch_decision":
+            branch_decisions.append(payload)
         elif artifact_type == "task_event":
             events.append(payload)
         elif artifact_type in {"schema_version", "schema_reference"}:
@@ -601,6 +610,13 @@ def _assemble_task(task_id: str, artifacts: list[dict[str, object]]) -> dict[str
         "interpretation": latest_by_type.get("task_interpretation", {}),
         "extractions": extractions,
         "coverage_reports": coverages,
+        "evidence_bundle": latest_by_type.get("task_evidence_bundle"),
+        "family_probes": family_probes,
+        "family_selection": latest_by_type.get("task_family_selection"),
+        "strategy_probes": strategy_probes,
+        "strategy_selection": latest_by_type.get("task_strategy_selection"),
+        "branch_decisions": branch_decisions,
+        "latest_branch_decision": branch_decisions[-1] if branch_decisions else None,
         "run": latest_by_type.get("task_run", {}),
         "schema_versions": schema_versions,
         "schema_gap": latest_by_type.get("schema_gap"),

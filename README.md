@@ -187,22 +187,32 @@ flowchart TD
     D --> I[TaskRuntime.run_task]
     H -->|task_evolve| I
 
-    I --> J[Prompt Memory Recall]
-    J --> K[LLM Task Interpretation]
-    K --> L[LLM Family Recheck]
-    L --> M[Subject Memory Recall]
-    M --> N{Existing Schema?}
-    N -->|No| O[LLM Initial Schema]
-    N -->|Yes| P[Reuse Latest Schema]
-    O --> Q[LLM Extraction]
-    P --> Q
-    Q --> R[Coverage Evaluation]
-    R -->|Missing Values| S[Re-extract]
-    S --> Q
-    R -->|Missing Structure| T[LLM Schema Evolution]
-    T --> U[Apply New Schema Version]
-    U --> Q
-    R -->|Complete| V[Persist Artifact Lineage]
+	    I --> J[Prompt Memory Recall]
+	    J --> K[LLM Task Interpretation]
+	    K --> L[LLM Family Recheck]
+	    L --> M[Subject Memory Recall]
+	    M --> M1[Task Evidence Bundle]
+	    M1 --> M2{Family Ambiguous?}
+	    M2 -->|Yes| M3[Probe Initial and Reviewed Families]
+	    M3 --> M4[Select Family Branch]
+	    M2 -->|No| N{Existing Schema?}
+	    M4 --> N
+	    N -->|No| O[LLM Initial Schema]
+	    N -->|Yes| P[Reuse Latest Schema]
+	    O --> Q[LLM Extraction]
+	    P --> Q
+	    Q --> R[Coverage Evaluation]
+	    R --> R1[Heuristic Branch Plan]
+	    R1 --> R2{Need Shadow Strategy Probe?}
+	    R2 -->|Yes| R3[Probe Re-extract and Schema Evolution]
+	    R3 --> R4[Select Strategy Branch]
+	    R2 -->|No| R4
+	    R4 -->|Missing Values| S[Re-extract]
+	    S --> Q
+	    R4 -->|Missing Structure| T[LLM Schema Evolution]
+	    T --> U[Apply New Schema Version with Deprecation Hints]
+	    U --> Q
+	    R4 -->|Complete or Stop| V[Persist Artifact Lineage]
 
     V --> W1[Analyze Information Gaps]
     W1 --> W2[Plan Next Step]
@@ -227,7 +237,10 @@ Notes:
 - Codex and Claude Code enter through plugin-managed HTTP MCP.
 - LM Studio enters through TraceRelay's MCP server over HTTP at `/mcp`.
 - MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
-- The interpretation path can revise `family` before schema selection, and `inspect_latest_changes` exposes `initial_family`, the final family, and any `family_revised` event.
+- The interpretation path can revise `family` before schema selection, and ambiguous cases can now probe both the initial and reviewed family before locking the final family.
+- `inspect_latest_changes` exposes `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, and the latest chosen branch.
+- Runtime decisions now emit a task evidence bundle, family probe scores, strategy probe scores, and telemetry-aware branch snapshots before re-extract or schema evolution proceeds.
+- Schema evolution can now persist deprecation metadata and pruning hints, so stale keys can be marked without losing lineage.
 - After each run, TraceRelay can expose gap analysis, next-step planning, and grounded search-query suggestions through MCP and HTTP APIs.
 - Flask is a read surface over PostgreSQL projection, not a second runtime.
 - Memory and lineage are shared across all of these surfaces once a run is persisted.
@@ -265,8 +278,13 @@ TraceRelay Runtime
 ├─ Extraction Loop
 │  ├─ extraction attempt
 │  ├─ coverage report
+│  ├─ shadow strategy probe when gaps remain
 │  ├─ re-extract if values are missing
 │  └─ evolve schema if structure is missing
+├─ Schema Pruning Metadata
+│  ├─ deprecated fields
+│  ├─ deprecated relations
+│  └─ pruning hints
 ├─ Action Planning
 │  ├─ information gap analysis
 │  ├─ next-step recommendation

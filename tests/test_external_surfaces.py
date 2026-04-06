@@ -136,6 +136,114 @@ class _FamilyReviewSurfaceLLM:
         )
 
 
+class _FamilyProbeSurfaceLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Macross",
+            "subject_candidates": ["Macross"],
+            "family": "organization",
+            "family_rationale": "The first pass stayed generic.",
+            "requested_fields": ["overview", "staff"],
+            "requested_relations": [],
+            "scope_hints": ["overview", "staff"],
+            "task_shape": "subject_analysis",
+            "locale": "ja",
+        }
+
+    def review_task_interpretation(self, spec, interpretation):  # noqa: ANN001
+        return {
+            "family": "media_work",
+            "family_rationale": "The title shape suggests media_work.",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview", "staff"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Probe schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        return ExtractionResult(
+            payload={
+                "overview": "Macross overview",
+                "staff": [] if family == "media_work" else ["executive staff"],
+            },
+            status="success",
+            provider_metadata={"provider": "family-probe-surface-test", "attempt": attempt, "family": family},
+        )
+
+
+class _StrategySurfaceLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "ACME Hypergrid",
+            "subject_candidates": ["ACME Hypergrid"],
+            "family": "organization",
+            "family_rationale": "The prompt requests an organization profile.",
+            "requested_fields": ["overview", "regional_presence"],
+            "requested_relations": ["suppliers"],
+            "scope_hints": ["overview", "regional_presence", "suppliers"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview"],
+            "optional_fields": ["legacy_status"],
+            "relations": ["old_relation"],
+            "rationale": "Initial schema still carries legacy keys.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview", "regional_presence"],
+            "optional_fields": ["legacy_status"],
+            "relations": ["old_relation", "suppliers"],
+            "deprecated_fields": ["legacy_status"],
+            "deprecated_relations": ["old_relation"],
+            "pruning_hints": ["drop legacy status from future probes"],
+            "rationale": "Add the missing keys and mark legacy slots as deprecated.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        if attempt == 1:
+            return ExtractionResult(
+                payload={
+                    "overview": "ACME Hypergrid overview",
+                    "legacy_status": "legacy",
+                    "old_relation": ["legacy relation"],
+                },
+                status="success",
+                provider_metadata={"provider": "strategy-surface-test", "attempt": attempt},
+            )
+        return ExtractionResult(
+            payload={
+                "overview": "ACME Hypergrid overview",
+                "regional_presence": ["US", "JP"],
+                "suppliers": ["Supply partner"],
+            },
+            status="success",
+            provider_metadata={"provider": "strategy-surface-test", "attempt": attempt},
+        )
+
+
 def _fake_urlopen(req, timeout=None):  # noqa: ANN001
     payload = json.loads(req.data.decode("utf-8"))
     system_prompt = payload["messages"][0]["content"]
@@ -446,7 +554,7 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     trace_payload = task_trace.get_json()
     assert trace_payload["summary"]["family"] == "organization"
     assert trace_payload["flowchart"]["nodes"][0]["artifact_type"] == "task_prompt"
-    assert trace_payload["decision_tree"]["children"][3]["title"] == "Execution Loop"
+    assert "Execution Loop" in [child["title"] for child in trace_payload["decision_tree"]["children"]]
     task_schema = client.get(f"/api/tasks/{google.task_id}/schema")
     assert task_schema.status_code == 200
     assert task_schema.get_json()["active_schema"]["version"] == 2
@@ -709,6 +817,72 @@ def test_inspect_latest_changes_reports_family_recheck(tmp_path):
     assert any(event["kind"] == "family_revised" for event in latest_changes["events"])
 
 
+def test_latest_changes_and_trace_surface_branch_decision(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+    run = runtime.run_task(
+        TaskSpec(
+            prompt="Googleの事業内容に加えて、主要経営陣、主要子会社、主要買収案件、主要競合、主要リスク、地域別展開も構造化して整理して"
+        )
+    )
+
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    latest_changes = server.call_tool("inspect_latest_changes", {"task_id": run.task_id})
+
+    assert latest_changes["chosen_branch_type"] == "complete"
+    assert latest_changes["completion_rate"] == 1.0
+    assert latest_changes["task"]["evidence_bundle"]["items"]
+    assert latest_changes["task"]["latest_branch_decision"]["chosen_branch_type"] == "complete"
+
+    trace = repository.get_task_trace(run.task_id)
+    assert trace["summary"]["chosen_branch_type"] == "complete"
+    assert any(node["artifact_type"] == "task_branch_decision" for node in trace["flowchart"]["nodes"])
+
+
+def test_latest_changes_and_trace_surface_family_probe_selection(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_FamilyProbeSurfaceLLM(), artifact_store=store)
+    run = runtime.run_task(TaskSpec(prompt="Macrossの概要とスタッフを整理して"))
+
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    latest_changes = server.call_tool("inspect_latest_changes", {"task_id": run.task_id})
+
+    assert latest_changes["final_family"] == "organization"
+    assert latest_changes["task"]["family_selection"]["chosen_family"] == "organization"
+    assert len(latest_changes["task"]["family_probes"]) == 2
+
+    trace = repository.get_task_trace(run.task_id)
+    assert trace["summary"]["selected_family"] == "organization"
+    assert any(node["artifact_type"] == "task_family_selection" for node in trace["flowchart"]["nodes"])
+
+
+def test_latest_changes_and_trace_surface_strategy_probe_and_schema_pruning(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_StrategySurfaceLLM(), artifact_store=store)
+    run = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid with regional presence and suppliers."))
+
+    repository = TaskRepository(store)
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    latest_changes = server.call_tool("inspect_latest_changes", {"task_id": run.task_id})
+
+    assert latest_changes["selected_strategy"] == "schema_evolution"
+    assert latest_changes["task"]["strategy_selection"]["chosen_branch_type"] == "schema_evolution"
+    assert len(latest_changes["task"]["strategy_probes"]) >= 1
+    assert latest_changes["task"]["schema_versions"][-1]["deprecated_fields"] == ["legacy_status"]
+    assert latest_changes["task"]["schema_versions"][-1]["pruning_hints"] == ["drop legacy status from future probes"]
+    assert latest_changes["telemetry"]
+
+    trace = repository.get_task_trace(run.task_id)
+    assert trace["summary"]["selected_strategy"] == "schema_evolution"
+    assert trace["schema_lineage"][-1]["deprecated_fields"] == ["legacy_status"]
+    assert trace["schema_lineage"][-1]["pruning_hints"] == ["drop legacy status from future probes"]
+    assert any(node["artifact_type"] == "task_strategy_probe" for node in trace["flowchart"]["nodes"])
+    assert any(node["artifact_type"] == "task_strategy_selection" for node in trace["flowchart"]["nodes"])
+    assert "Strategy Branching" in [child["title"] for child in trace["decision_tree"]["children"]]
+
+
 def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):
     store = JsonlArtifactStore(tmp_path / "workspace")
     runtime = TaskRuntime(llm=fake_llm, artifact_store=store, max_schema_rounds=0)
@@ -734,6 +908,7 @@ def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):
 
     next_step = client.get(f"/api/tasks/{run.task_id}/next-step").get_json()
     assert next_step["recommended_tool"] == "continue_prior_work"
+    assert next_step["chosen_branch_type"] == "halt_partial"
     assert any(item["tool"] == "prepare_search_queries" for item in next_step["recommended_actions"])
     assert any("task_memory_context" in item for item in next_step["pre_search_checks"])
 
@@ -744,6 +919,7 @@ def test_planning_tools_surface_schema_gap_and_queries(fake_llm, tmp_path):
     assert query_result["queries"]
     next_result = server.call_tool("plan_next_step", {"task_id": run.task_id})
     assert next_result["recommended_tool"] == "continue_prior_work"
+    assert next_result["chosen_branch_type"] == "halt_partial"
     assert next_result["recommended_queries"]
 
 
@@ -936,6 +1112,9 @@ def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
             "required_fields": ["overview", "leadership", "overview"],
             "optional_fields": ["leadership", "major_risks", "overview"],
             "relations": ["subsidiaries", "major_risks", "subsidiaries"],
+            "deprecated_fields": ["leadership", "unknown_field", "leadership"],
+            "deprecated_relations": ["subsidiaries", "missing_relation"],
+            "pruning_hints": ["drop noisy legacy slots", "drop noisy legacy slots"],
             "rationale": "Normalize duplicates.",
         },
         parent=None,
@@ -944,6 +1123,9 @@ def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
     assert schema.required_fields == ("overview", "leadership")
     assert schema.optional_fields == ("major_risks",)
     assert schema.relations == ("subsidiaries",)
+    assert schema.deprecated_fields == ("leadership",)
+    assert schema.deprecated_relations == ("subsidiaries",)
+    assert schema.pruning_hints == ("drop noisy legacy slots",)
 
     extraction_schema = _task_extraction_schema(
         SchemaVersion(
@@ -956,11 +1138,13 @@ def test_schema_store_and_extraction_schema_deduplicate_keys(tmp_path):
             optional_fields=("major_risks", "overview"),
             relations=("subsidiaries", "major_risks", "subsidiaries"),
             rationale="test",
+            deprecated_fields=("major_risks",),
+            deprecated_relations=("subsidiaries",),
         )
     )
     payload_schema = extraction_schema["properties"]["payload"]
-    assert list(payload_schema["properties"].keys()) == ["overview", "major_risks", "subsidiaries"]
-    assert payload_schema["required"] == ["overview", "major_risks", "subsidiaries"]
+    assert list(payload_schema["properties"].keys()) == ["overview"]
+    assert payload_schema["required"] == ["overview"]
 
 
 class _StubCursor:

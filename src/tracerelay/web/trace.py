@@ -6,10 +6,16 @@ from typing import Any
 _ARTIFACT_LANES = {
     "task_prompt": "input",
     "task_interpretation": "decision",
+    "task_evidence_bundle": "decision",
+    "task_family_probe": "decision",
+    "task_family_selection": "decision",
+    "task_strategy_probe": "decision",
+    "task_strategy_selection": "decision",
     "schema_version": "schema",
     "schema_reference": "schema",
     "task_extraction": "extraction",
     "coverage_report": "decision",
+    "task_branch_decision": "decision",
     "schema_gap": "schema",
     "schema_requirement": "schema",
     "schema_candidate": "schema",
@@ -23,6 +29,9 @@ def build_task_trace(task: dict[str, object], artifacts: list[dict[str, object]]
     task_id = str(task["task_id"])
     interpretation = dict(task.get("interpretation") or {})
     run = dict(task.get("run") or {})
+    latest_branch_decision = dict(task.get("latest_branch_decision") or {})
+    family_selection = dict(task.get("family_selection") or {})
+    strategy_selection = dict(task.get("strategy_selection") or {})
     schema_versions = [dict(item) for item in task.get("schema_versions", [])]
 
     flow_nodes = [_artifact_to_node(index, artifact) for index, artifact in enumerate(artifacts)]
@@ -39,6 +48,10 @@ def build_task_trace(task: dict[str, object], artifacts: list[dict[str, object]]
             "reason": run.get("reason"),
             "attempts": run.get("attempts"),
             "schema_rounds": run.get("schema_rounds"),
+            "selected_family": family_selection.get("chosen_family"),
+            "selected_strategy": strategy_selection.get("chosen_branch_type"),
+            "chosen_branch_type": latest_branch_decision.get("chosen_branch_type"),
+            "completion_rate": latest_branch_decision.get("completion_rate"),
         },
         "schema_lineage": [_schema_lineage_item(schema, index) for index, schema in enumerate(schema_versions)],
         "flowchart": {"nodes": flow_nodes, "edges": flow_edges},
@@ -84,16 +97,83 @@ def _artifact_summary(
         ]
         subtitle = f"{payload.get('family', '')} for {payload.get('resolved_subject', '')}"
         return "Interpretation", subtitle, _detail_lines(details), "decision"
+    if artifact_type == "task_evidence_bundle":
+        items = [dict(item) for item in payload.get("items", [])]
+        details = [
+            f"subject key: {payload.get('subject_key', '')}",
+            f"family: {payload.get('family', '')}",
+            f"evidence items: {len(items)}",
+        ]
+        for item in items[:3]:
+            details.append(
+                f"{item.get('source', 'evidence')}: {_truncate(str(item.get('summary', '')), 120)} "
+                f"(confidence {item.get('confidence', 0)})"
+            )
+        return "Evidence Bundle", _truncate(str(payload.get("summary", "")), 120), _detail_lines(details), "decision"
+    if artifact_type == "task_family_probe":
+        details = [
+            f"schema: {payload.get('schema_id', '')} (v{payload.get('schema_version', '?')})",
+            f"source: {payload.get('schema_source', '')}",
+            f"status: {payload.get('status', '')}",
+            f"completion rate: {payload.get('completion_rate', 0)}",
+            f"dominant issue: {payload.get('dominant_issue', 'none')}",
+            f"score: {payload.get('score', 0)}",
+        ]
+        return "Family Probe", str(payload.get("family", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_family_selection":
+        details = [
+            f"reviewed family: {payload.get('reviewed_family', '')}",
+            f"initial family: {payload.get('initial_family', '')}",
+            f"chosen family: {payload.get('chosen_family', '')}",
+            f"chosen score: {payload.get('chosen_score', 0)}",
+            f"rationale: {payload.get('rationale', '')}",
+        ]
+        return "Family Selection", str(payload.get("chosen_family", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_strategy_probe":
+        details = [
+            f"attempt: {payload.get('attempt', '?')}",
+            f"status: {payload.get('status', '')}",
+            f"schema: {payload.get('schema_id', '')} (v{payload.get('schema_version', '?')})",
+            f"source: {payload.get('schema_source', '')}",
+            f"completion rate: {payload.get('completion_rate', 0)}",
+            f"score: {payload.get('score', 0)}",
+            f"missing values: {_preview_list(_to_str_list(payload.get('missing_values', [])))}",
+            f"missing fields: {_preview_list(_to_str_list(payload.get('missing_fields', [])))}",
+            f"missing relations: {_preview_list(_to_str_list(payload.get('missing_relations', [])))}",
+            f"deprecated fields: {_preview_list(_to_str_list(payload.get('deprecated_fields', [])))}",
+            f"deprecated relations: {_preview_list(_to_str_list(payload.get('deprecated_relations', [])))}",
+            f"pruning hints: {_preview_list(_to_str_list(payload.get('pruning_hints', [])))}",
+        ]
+        return "Strategy Probe", str(payload.get("branch_type", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_strategy_selection":
+        details = [
+            f"attempt: {payload.get('attempt', '?')}",
+            f"chosen branch: {payload.get('chosen_branch_type', '')}",
+            f"rationale: {payload.get('rationale', '')}",
+        ]
+        for candidate in payload.get("candidates", [])[:4]:
+            entry = dict(candidate)
+            details.append(
+                f"{entry.get('branch_type', '')}: score {entry.get('score', 0)} "
+                f"({entry.get('dominant_issue', 'none')})"
+            )
+        return "Strategy Selection", str(payload.get("chosen_branch_type", "")), _detail_lines(details), "decision"
     if artifact_type in {"schema_version", "schema_reference"}:
         required_fields = [str(item) for item in payload.get("required_fields", [])]
         optional_fields = [str(item) for item in payload.get("optional_fields", [])]
         relations = [str(item) for item in payload.get("relations", [])]
+        deprecated_fields = [str(item) for item in payload.get("deprecated_fields", [])]
+        deprecated_relations = [str(item) for item in payload.get("deprecated_relations", [])]
+        pruning_hints = [str(item) for item in payload.get("pruning_hints", [])]
         version = payload.get("version", "?")
         subtitle = f"{payload.get('family', '')} schema v{version}"
         details = [
             f"required: {_preview_list(required_fields)}",
             f"optional: {_preview_list(optional_fields)}",
             f"relations: {_preview_list(relations)}",
+            f"deprecated fields: {_preview_list(deprecated_fields)}",
+            f"deprecated relations: {_preview_list(deprecated_relations)}",
+            f"pruning hints: {_preview_list(pruning_hints)}",
         ]
         title = "Schema Version" if artifact_type == "schema_version" else "Schema Reference"
         return title, subtitle, _detail_lines(details), "schema"
@@ -117,6 +197,22 @@ def _artifact_summary(
         ]
         tone = "success" if dominant_issue == "none" else "warning"
         return "Coverage Check", f"dominant issue: {dominant_issue}", _detail_lines(details), tone
+    if artifact_type == "task_branch_decision":
+        branch_scores = [dict(item) for item in payload.get("branch_scores", [])]
+        telemetry = dict(payload.get("telemetry", {}))
+        details = [
+            f"attempt: {payload.get('attempt', '?')}",
+            f"dominant issue: {payload.get('dominant_issue', 'none')}",
+            f"completion rate: {payload.get('completion_rate', 0)}",
+        ]
+        for key, value in list(telemetry.items())[:4]:
+            details.append(f"{key}: {value}")
+        for item in branch_scores:
+            details.append(
+                f"{item.get('branch_type', 'branch')}: score {item.get('score', 0)} "
+                f"because {item.get('rationale', '')}"
+            )
+        return "Branch Decision", str(payload.get("chosen_branch_type", "")), _detail_lines(details), "decision"
     if artifact_type == "schema_gap":
         signals = [str(item) for item in payload.get("signals", [])]
         return "Schema Gap", _preview_list(signals), _detail_lines([f"signals: {_preview_list(signals)}"]), "warning"
@@ -126,12 +222,18 @@ def _artifact_summary(
     if artifact_type == "schema_candidate":
         fields = [str(item) for item in payload.get("fields", [])]
         relations = [str(item) for item in payload.get("relations", [])]
+        deprecated_fields = [str(item) for item in payload.get("deprecated_fields", [])]
+        deprecated_relations = [str(item) for item in payload.get("deprecated_relations", [])]
+        pruning_hints = [str(item) for item in payload.get("pruning_hints", [])]
         details = [
             f"additive fields: {_preview_list(fields)}",
             f"additive relations: {_preview_list(relations)}",
+            f"deprecated fields: {_preview_list(deprecated_fields)}",
+            f"deprecated relations: {_preview_list(deprecated_relations)}",
+            f"pruning hints: {_preview_list(pruning_hints)}",
             f"rationale: {payload.get('rationale', '')}",
         ]
-        return "Schema Candidate", "LLM additive proposal", _detail_lines(details), "schema"
+        return "Schema Candidate", "LLM schema proposal", _detail_lines(details), "schema"
     if artifact_type == "schema_review":
         disposition = str(payload.get("disposition", ""))
         notes = str(payload.get("notes", ""))
@@ -164,6 +266,12 @@ def _event_details(payload: dict[str, object]) -> list[str]:
         lines.append(f"applied fields: {_preview_list(_to_str_list(details['fields']))}")
     if "relations" in details:
         lines.append(f"applied relations: {_preview_list(_to_str_list(details['relations']))}")
+    if "deprecated_fields" in details:
+        lines.append(f"deprecated fields: {_preview_list(_to_str_list(details['deprecated_fields']))}")
+    if "deprecated_relations" in details:
+        lines.append(f"deprecated relations: {_preview_list(_to_str_list(details['deprecated_relations']))}")
+    if "pruning_hints" in details:
+        lines.append(f"pruning hints: {_preview_list(_to_str_list(details['pruning_hints']))}")
     if "schema_id" in details:
         lines.append(f"schema: {details['schema_id']} (v{details.get('version', '?')})")
     if not lines:
@@ -194,6 +302,28 @@ def _edge_label(
         subtitle = str(current.get("subtitle", ""))
         if subtitle == "reextract_requested":
             return "values branch"
+    if previous_type == "coverage_report" and current_type == "task_branch_decision":
+        return "score branches"
+    if previous_type == "task_family_probe" and current_type == "task_family_probe":
+        return "compare family candidate"
+    if previous_type == "task_family_probe" and current_type == "task_family_selection":
+        return "pick family"
+    if previous_type == "task_family_selection" and current_type == "task_interpretation":
+        return "lock final family"
+    if previous_type == "coverage_report" and current_type == "task_strategy_probe":
+        return "probe strategies"
+    if previous_type == "task_strategy_probe" and current_type == "task_strategy_probe":
+        return "compare strategy candidate"
+    if previous_type == "task_strategy_probe" and current_type == "task_strategy_selection":
+        return "pick strategy"
+    if previous_type == "task_strategy_selection" and current_type == "task_branch_decision":
+        return "commit branch"
+    if previous_type == "task_branch_decision" and current_type == "schema_gap":
+        return "choose schema evolution"
+    if previous_type == "task_branch_decision" and current_type == "task_event":
+        return "choose retry"
+    if previous_type == "task_branch_decision" and current_type == "task_run":
+        return "choose outcome"
     if previous_type == "coverage_report" and current_type == "schema_gap":
         return "schema branch"
     if previous_type == "coverage_report" and current_type == "task_run":
@@ -210,6 +340,10 @@ def _edge_label(
 def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, object]]) -> dict[str, object]:
     interpretation = dict(task.get("interpretation") or {})
     run = dict(task.get("run") or {})
+    evidence_bundle = dict(task.get("evidence_bundle") or {})
+    family_selection = dict(task.get("family_selection") or {})
+    strategy_selection = dict(task.get("strategy_selection") or {})
+    latest_branch_decision = dict(task.get("latest_branch_decision") or {})
 
     root = {
         "title": "Task Decision Tree",
@@ -242,6 +376,39 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
                 "children": _schema_tree_nodes([dict(item) for item in task.get("schema_versions", [])]),
             },
             {
+                "title": "Family Branching",
+                "lines": _detail_lines(
+                    [
+                        f"reviewed family: {family_selection.get('reviewed_family', interpretation.get('family', ''))}",
+                        f"initial family: {family_selection.get('initial_family', interpretation.get('initial_family', '') or 'n/a')}",
+                        f"chosen family: {family_selection.get('chosen_family', interpretation.get('family', ''))}",
+                        f"rationale: {family_selection.get('rationale', interpretation.get('family_review_rationale', '') or 'n/a')}",
+                    ]
+                ),
+                "children": [],
+            },
+            {
+                "title": "Strategy Branching",
+                "lines": _detail_lines(
+                    [
+                        f"chosen strategy: {strategy_selection.get('chosen_branch_type', latest_branch_decision.get('chosen_branch_type', 'n/a'))}",
+                        f"completion rate: {latest_branch_decision.get('completion_rate', 'n/a')}",
+                        f"rationale: {strategy_selection.get('rationale', latest_branch_decision.get('rationale', '') or 'n/a')}",
+                    ]
+                ),
+                "children": [],
+            },
+            {
+                "title": "Evidence",
+                "lines": _detail_lines(
+                    [
+                        f"summary: {evidence_bundle.get('summary', 'n/a')}",
+                        f"items: {len(evidence_bundle.get('items', []))}",
+                    ]
+                ),
+                "children": [],
+            },
+            {
                 "title": "Execution Loop",
                 "lines": [],
                 "children": _attempt_tree_nodes(artifacts, run),
@@ -254,6 +421,9 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
                         f"reason: {run.get('reason', '')}",
                         f"attempts: {run.get('attempts', '')}",
                         f"schema rounds: {run.get('schema_rounds', '')}",
+                        f"selected family: {family_selection.get('chosen_family', interpretation.get('family', 'n/a'))}",
+                        f"selected strategy: {strategy_selection.get('chosen_branch_type', latest_branch_decision.get('chosen_branch_type', 'n/a'))}",
+                        f"chosen branch: {latest_branch_decision.get('chosen_branch_type', 'n/a')}",
                     ]
                 ),
                 "children": [],
@@ -275,6 +445,9 @@ def _schema_tree_nodes(schema_versions: list[dict[str, object]]) -> list[dict[st
                         f"required: {_preview_list(_to_str_list(schema.get('required_fields', [])))}",
                         f"optional: {_preview_list(_to_str_list(schema.get('optional_fields', [])))}",
                         f"relations: {_preview_list(_to_str_list(schema.get('relations', [])))}",
+                        f"deprecated fields: {_preview_list(_to_str_list(schema.get('deprecated_fields', [])))}",
+                        f"deprecated relations: {_preview_list(_to_str_list(schema.get('deprecated_relations', [])))}",
+                        f"pruning hints: {_preview_list(_to_str_list(schema.get('pruning_hints', [])))}",
                     ]
                 ),
                 "children": [],
@@ -296,6 +469,9 @@ def _attempt_tree_nodes(artifacts: list[dict[str, object]], run: dict[str, objec
                 "attempt": payload.get("attempt", len(attempts) + 1),
                 "extraction": payload,
                 "coverage": None,
+                "strategy_probes": [],
+                "strategy_selection": None,
+                "policy": None,
                 "events": [],
                 "gap": None,
                 "requirement": None,
@@ -311,6 +487,12 @@ def _attempt_tree_nodes(artifacts: list[dict[str, object]], run: dict[str, objec
 
         if artifact_type == "coverage_report":
             current["coverage"] = payload
+        elif artifact_type == "task_strategy_probe":
+            current["strategy_probes"].append(payload)
+        elif artifact_type == "task_strategy_selection":
+            current["strategy_selection"] = payload
+        elif artifact_type == "task_branch_decision":
+            current["policy"] = payload
         elif artifact_type == "task_event":
             current["events"].append(payload)
         elif artifact_type == "schema_gap":
@@ -360,6 +542,45 @@ def _attempt_tree_nodes(artifacts: list[dict[str, object]], run: dict[str, objec
             )
 
         decision_children: list[dict[str, object]] = []
+        policy = dict(attempt.get("policy") or {})
+        if policy:
+            branch_lines = [
+                f"chosen branch: {policy.get('chosen_branch_type', '')}",
+                f"completion rate: {policy.get('completion_rate', 0)}",
+            ]
+            for key, value in list(dict(policy.get("telemetry", {})).items())[:3]:
+                branch_lines.append(f"{key}: {value}")
+            for item in policy.get("branch_scores", [])[:3]:
+                entry = dict(item)
+                branch_lines.append(
+                    f"{entry.get('branch_type', '')}: score {entry.get('score', 0)}"
+                )
+            decision_children.append(
+                {
+                    "title": "Policy Snapshot",
+                    "lines": _detail_lines(branch_lines),
+                    "children": [],
+                }
+            )
+        strategy_selection = dict(attempt.get("strategy_selection") or {})
+        strategy_probes = [dict(item) for item in attempt.get("strategy_probes", [])]
+        if strategy_selection or strategy_probes:
+            strategy_lines = [
+                f"chosen strategy: {strategy_selection.get('chosen_branch_type', policy.get('chosen_branch_type', 'n/a'))}",
+                f"rationale: {strategy_selection.get('rationale', policy.get('rationale', '') or 'n/a')}",
+            ]
+            for item in strategy_probes[:4]:
+                strategy_lines.append(
+                    f"{item.get('branch_type', '')}: score {item.get('score', 0)} "
+                    f"with {item.get('status', 'unknown')} status"
+                )
+            decision_children.append(
+                {
+                    "title": "Strategy Branching",
+                    "lines": _detail_lines(strategy_lines),
+                    "children": [],
+                }
+            )
         if attempt.get("gap") or attempt.get("requirement") or attempt.get("candidate") or attempt.get("review") or attempt.get("schema"):
             evolution_lines = []
             gap = dict(attempt["gap"] or {})
@@ -374,6 +595,15 @@ def _attempt_tree_nodes(artifacts: list[dict[str, object]], run: dict[str, objec
             if candidate:
                 evolution_lines.append(f"candidate fields: {_preview_list(_to_str_list(candidate.get('fields', [])))}")
                 evolution_lines.append(f"candidate relations: {_preview_list(_to_str_list(candidate.get('relations', [])))}")
+                evolution_lines.append(
+                    f"deprecated fields: {_preview_list(_to_str_list(candidate.get('deprecated_fields', [])))}"
+                )
+                evolution_lines.append(
+                    f"deprecated relations: {_preview_list(_to_str_list(candidate.get('deprecated_relations', [])))}"
+                )
+                evolution_lines.append(
+                    f"pruning hints: {_preview_list(_to_str_list(candidate.get('pruning_hints', [])))}"
+                )
             if review:
                 evolution_lines.append(f"review: {review.get('disposition', '')}")
             if schema:
@@ -417,8 +647,15 @@ def _attempt_tree_nodes(artifacts: list[dict[str, object]], run: dict[str, objec
 def _attempt_decision(attempt: dict[str, Any], run: dict[str, object]) -> list[str]:
     extraction = dict(attempt["extraction"])
     coverage = dict(attempt["coverage"] or {})
+    policy = dict(attempt.get("policy") or {})
     if extraction.get("status") == "failed":
         return ["provider execution failed", f"final reason: {run.get('reason', '')}"]
+
+    if policy:
+        return [
+            f"controller chose: {policy.get('chosen_branch_type', '')}",
+            f"policy rationale: {policy.get('rationale', '')}",
+        ]
 
     dominant_issue = str(coverage.get("dominant_issue", "none"))
     if dominant_issue == "none":
@@ -443,6 +680,9 @@ def _schema_lineage_item(schema: dict[str, object], index: int) -> dict[str, obj
         "required_fields": _to_str_list(schema.get("required_fields", [])),
         "optional_fields": _to_str_list(schema.get("optional_fields", [])),
         "relations": _to_str_list(schema.get("relations", [])),
+        "deprecated_fields": _to_str_list(schema.get("deprecated_fields", [])),
+        "deprecated_relations": _to_str_list(schema.get("deprecated_relations", [])),
+        "pruning_hints": _to_str_list(schema.get("pruning_hints", [])),
         "rationale": schema.get("rationale"),
     }
 

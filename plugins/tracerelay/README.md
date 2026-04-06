@@ -51,4 +51,4 @@ Preferred routing in Claude Code:
 - `prepare_search_queries` when external search is needed
 
 TraceRelay may recheck the abstract `family` after the initial interpretation when the requested schema shape points elsewhere.
-Use `inspect_latest_changes` to see `initial_family`, the final family, and any `family_revised` event.
+Use `inspect_latest_changes` to see `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, the selected strategy branch, the latest chosen branch, and controller telemetry from the latest decision.

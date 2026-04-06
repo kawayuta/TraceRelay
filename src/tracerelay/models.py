@@ -47,6 +47,9 @@ class SchemaVersion:
     optional_fields: tuple[str, ...]
     relations: tuple[str, ...]
     rationale: str
+    deprecated_fields: tuple[str, ...] = ()
+    deprecated_relations: tuple[str, ...] = ()
+    pruning_hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,9 @@ class SchemaCandidate:
     additive_fields: tuple[str, ...]
     additive_relations: tuple[str, ...]
     rationale: str
+    deprecated_fields: tuple[str, ...] = ()
+    deprecated_relations: tuple[str, ...] = ()
+    pruning_hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -165,6 +171,48 @@ class TaskMemoryContext:
 
 
 @dataclass(frozen=True)
+class EvidenceItem:
+    evidence_id: str
+    source: str
+    summary: str
+    confidence: float
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EvidenceBundle:
+    bundle_id: str
+    subject_key: str
+    family: str
+    summary: str
+    items: tuple[EvidenceItem, ...] = ()
+
+
+@dataclass(frozen=True)
+class BranchScore:
+    branch_id: str
+    branch_type: str
+    score: float
+    rationale: str
+    metrics: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PolicySnapshot:
+    policy_id: str
+    attempt: int
+    dominant_issue: str
+    completion_rate: float
+    chosen_branch_id: str
+    chosen_branch_type: str
+    rationale: str
+    evidence_bundle_id: str = ""
+    branch_scores: tuple[BranchScore, ...] = ()
+    budget: dict[str, int] = field(default_factory=dict)
+    telemetry: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class TaskRun:
     task_id: str
     spec: TaskSpec
@@ -184,3 +232,5 @@ class TaskRun:
     events: tuple[TaskEvent, ...] = ()
     artifacts: tuple[ArtifactRecord, ...] = ()
     memory_context: TaskMemoryContext | None = None
+    evidence_bundle: EvidenceBundle | None = None
+    policy_snapshots: tuple[PolicySnapshot, ...] = ()

@@ -26,6 +26,9 @@ def test_media_prompt_reextracts_with_same_schema(fake_llm):
     assert run.reason == "complete"
     assert run.status == "success"
     assert run.coverage.dominant_issue == "none"
+    assert run.evidence_bundle is not None
+    assert len(run.evidence_bundle.items) >= 1
+    assert [snapshot.chosen_branch_type for snapshot in run.policy_snapshots] == ["reextract", "complete"]
 
 
 def test_google_prompt_auto_evolves_schema_then_reextracts(fake_llm):
@@ -49,13 +52,20 @@ def test_google_prompt_auto_evolves_schema_then_reextracts(fake_llm):
     assert "regional_presence" in run.candidate.additive_fields
     assert "acquisitions" in run.candidate.additive_relations
     assert run.review is not None
+    assert run.extraction_history[1].provider_metadata["probe_reused"] is True
+    assert run.extraction_history[1].provider_metadata["strategy_branch"] == "schema_evolution"
     assert any(event.kind == "schema_version_applied" for event in run.events)
+    assert [snapshot.chosen_branch_type for snapshot in run.policy_snapshots] == ["schema_evolution", "complete"]
     assert {artifact.artifact_type for artifact in run.artifacts} >= {
         "task_prompt",
         "task_interpretation",
+        "task_evidence_bundle",
+        "task_strategy_probe",
+        "task_strategy_selection",
         "schema_version",
         "task_extraction",
         "coverage_report",
+        "task_branch_decision",
         "schema_gap",
         "schema_requirement",
         "schema_candidate",
@@ -246,3 +256,162 @@ def test_runtime_rechecks_family_before_schema_selection(tmp_path):
     task = repository.get_task(run.task_id)
     assert task["interpretation"]["family"] == "media_work"
     assert task["interpretation"]["initial_family"] == "organization"
+
+
+class _FamilyBranchProbeLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "Macross",
+            "subject_candidates": ["Macross"],
+            "family": "organization",
+            "family_rationale": "The first pass stayed generic.",
+            "requested_fields": ["overview", "staff"],
+            "requested_relations": [],
+            "scope_hints": ["overview", "staff"],
+            "task_shape": "subject_analysis",
+            "locale": "ja",
+        }
+
+    def review_task_interpretation(self, spec, interpretation):  # noqa: ANN001
+        return {
+            "family": "media_work",
+            "family_rationale": "The subject name looks like a title, so media_work is plausible.",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview", "staff"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Probe schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        from tracerelay.models import ExtractionResult
+
+        payload = {"overview": f"{interpretation.resolved_subject} overview"}
+        payload["staff"] = [] if family == "media_work" else ["executive staff"]
+        return ExtractionResult(
+            payload=payload,
+            status="success",
+            provider_metadata={"provider": "family-branch-probe-test", "attempt": attempt, "family": family},
+        )
+
+
+def test_runtime_can_override_reviewed_family_when_family_probe_prefers_initial(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_FamilyBranchProbeLLM(), artifact_store=store)
+
+    run = runtime.run_task(TaskSpec(prompt="Macrossの概要とスタッフを整理して"))
+
+    assert run.interpretation.family == "organization"
+    assert run.interpretation.initial_family == "organization"
+    assert run.status == "success"
+    assert run.reason == "complete"
+    assert any(event.kind == "family_branch_selected" for event in run.events)
+    assert {artifact.artifact_type for artifact in run.artifacts} >= {
+        "task_family_probe",
+        "task_family_selection",
+    }
+
+    repository = TaskRepository(store)
+    task = repository.get_task(run.task_id)
+    assert task["interpretation"]["family"] == "organization"
+    assert task["family_selection"]["chosen_family"] == "organization"
+
+
+class _StrategyPruningLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "ACME Hypergrid",
+            "subject_candidates": ["ACME Hypergrid"],
+            "family": "organization",
+            "family_rationale": "The task asks for an organization profile.",
+            "requested_fields": ["overview", "regional_presence"],
+            "requested_relations": ["suppliers"],
+            "scope_hints": ["overview", "regional_presence", "suppliers"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview"],
+            "optional_fields": ["legacy_status"],
+            "relations": ["old_relation"],
+            "rationale": "Initial schema still carries legacy keys.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview", "regional_presence"],
+            "optional_fields": ["legacy_status"],
+            "relations": ["old_relation", "suppliers"],
+            "deprecated_fields": ["legacy_status"],
+            "deprecated_relations": ["old_relation"],
+            "pruning_hints": ["drop legacy status from future probes"],
+            "rationale": "Add the missing coverage keys and deprecate the noisy legacy slots.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        from tracerelay.models import ExtractionResult
+
+        if attempt == 1:
+            payload = {
+                "overview": "ACME Hypergrid overview",
+                "legacy_status": "legacy",
+                "old_relation": ["legacy relation"],
+            }
+        else:
+            payload = {
+                "overview": "ACME Hypergrid overview",
+                "regional_presence": ["US", "JP"],
+                "suppliers": ["Supply partner"],
+            }
+        return ExtractionResult(
+            payload=payload,
+            status="success",
+            provider_metadata={"provider": "strategy-pruning-test", "attempt": attempt},
+        )
+
+
+def test_runtime_prefers_strategy_probe_and_persists_schema_pruning_metadata(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_StrategyPruningLLM(), artifact_store=store)
+
+    run = runtime.run_task(TaskSpec(prompt="Please investigate ACME Hypergrid with regional presence and suppliers."))
+
+    assert run.status == "success"
+    assert run.reason == "complete"
+    assert len(run.schema_history) == 2
+    assert run.policy_snapshots[0].chosen_branch_type == "schema_evolution"
+    assert run.extraction_history[1].provider_metadata["probe_reused"] is True
+    assert run.extraction_history[1].provider_metadata["strategy_branch"] == "schema_evolution"
+    assert run.schema.deprecated_fields == ("legacy_status",)
+    assert run.schema.deprecated_relations == ("old_relation",)
+    assert run.schema.pruning_hints == ("drop legacy status from future probes",)
+    assert run.candidate is not None
+    assert run.candidate.deprecated_fields == ("legacy_status",)
+    assert run.candidate.deprecated_relations == ("old_relation",)
+    assert run.candidate.pruning_hints == ("drop legacy status from future probes",)
+    assert run.review is not None
+    assert "deprecated fields" in run.review.notes
+    assert any(event.details.get("deprecated_fields") == ["legacy_status"] for event in run.events)
+    assert {artifact.artifact_type for artifact in run.artifacts} >= {
+        "task_strategy_probe",
+        "task_strategy_selection",
+    }

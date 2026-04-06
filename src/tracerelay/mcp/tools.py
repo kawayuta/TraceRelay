@@ -157,6 +157,7 @@ class MCPToolbox:
                 "found": True,
                 "task_id": task_id,
                 **_family_review_summary(task),
+                **_branch_decision_summary(task),
                 "task": task,
                 "trace": self.repository.get_task_trace(task_id),
                 "schema": self.repository.get_task_schema(task_id),
@@ -609,6 +610,8 @@ def _summarize_result(result: object) -> dict[str, object]:
             "family_changed",
             "initial_family",
             "final_family",
+            "chosen_branch_type",
+            "completion_rate",
         ):
             if key in result:
                 summary[key] = result[key]
@@ -655,4 +658,21 @@ def _family_review_summary(task: dict[str, object]) -> dict[str, object]:
         "initial_family": initial_family,
         "final_family": final_family,
         "family_review_rationale": family_review_rationale,
+    }
+
+
+def _branch_decision_summary(task: dict[str, object]) -> dict[str, object]:
+    branch_decision = dict(task.get("latest_branch_decision") or {})
+    strategy_selection = dict(task.get("strategy_selection") or {})
+    return {
+        "chosen_branch_type": str(branch_decision.get("chosen_branch_type") or "").strip(),
+        "selected_strategy": str(
+            strategy_selection.get("chosen_branch_type") or branch_decision.get("chosen_branch_type") or ""
+        ).strip(),
+        "completion_rate": branch_decision.get("completion_rate"),
+        "branch_rationale": str(branch_decision.get("rationale") or "").strip(),
+        "strategy_rationale": str(
+            strategy_selection.get("rationale") or branch_decision.get("rationale") or ""
+        ).strip(),
+        "telemetry": dict(branch_decision.get("telemetry") or {}),
     }

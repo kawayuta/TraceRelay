@@ -25,20 +25,30 @@ flowchart TD
     B --> C[LLM Interpretation]
     C --> D[LLM Family Recheck]
     D --> E[Subject Memory Recall]
-    E --> F{Latest Schema Exists?}
+    E --> E1[Task Evidence Bundle]
+    E1 --> E2{Family Ambiguous?}
+    E2 -->|Yes| E3[Probe Initial and Reviewed Families]
+    E3 --> E4[Select Family Branch]
+    E2 -->|No| F{Latest Schema Exists?}
+    E4 --> F
     F -->|No| G[LLM Initial Schema]
     F -->|Yes| H[Reuse Latest Schema]
     G --> I[LLM Extraction]
     H --> I
     I --> J[Coverage Evaluation]
-    J -->|Complete| K[Persist Run]
-    J -->|Missing Values| L[Re-extract]
+    J --> J1[Heuristic Branch Plan]
+    J1 --> J2{Need Strategy Probe?}
+    J2 -->|Yes| J3[Probe Re-extract and Schema Evolution]
+    J2 -->|No| K
+    J3 --> K[Select Winning Strategy]
+    K -->|Complete| O[Persist Run]
+    K -->|Missing Values| L[Re-extract]
     L --> I
-    J -->|Missing Fields or Relations| M[LLM Schema Evolution]
-    M --> N[Apply New Schema Version]
+    K -->|Missing Fields or Relations| M[LLM Schema Evolution]
+    M --> N[Apply New Schema Version with Deprecation Hints]
     N --> I
-    K --> O[Project to PostgreSQL]
-    O --> P[Expose Through Web and MCP]
+    O --> P[Project to PostgreSQL]
+    P --> Q[Expose Through Web and MCP]
 ```
 
 ## Decision Tree
@@ -60,6 +70,11 @@ Task
 │  ├─ compare requested schema shape
 │  ├─ keep or revise family
 │  └─ record review rationale
+├─ Probe family branch when ambiguous
+│  ├─ run a shadow probe for reviewed family
+│  ├─ run a shadow probe for initial family
+│  ├─ score coverage and evidence support
+│  └─ lock the winning family before schema selection
 ├─ Resolve schema
 │  ├─ reuse latest schema for family
 │  └─ or generate initial schema
@@ -69,12 +84,14 @@ Task
 ├─ Evaluate coverage
 │  ├─ if nothing is missing
 │  │  └─ finish task
+│  ├─ build a heuristic branch plan
+│  ├─ probe re-extract and schema-evolution candidates when needed
 │  ├─ if values are missing
 │  │  └─ re-extract
 │  └─ if structure is missing
 │     ├─ build gap
 │     ├─ build requirement
-│     ├─ ask LLM for additive schema
+│     ├─ ask LLM for schema additions and deprecation hints
 │     ├─ persist schema version
 │     └─ extract again
 └─ Publish
@@ -92,6 +109,11 @@ The runtime stores a task as a sequence of typed artifacts.
 task_prompt
 task_memory_context
 task_interpretation
+task_evidence_bundle
+task_family_probe
+task_family_selection
+task_strategy_probe
+task_strategy_selection
 schema_reference or schema_version
 task_extraction
 coverage_report
@@ -202,6 +224,10 @@ The repository currently includes a live-verified Google task that:
 - `final_family`
 - `family_review_rationale`
 - any `family_revised` task event
+- any `family_branch_selected` task event
+- the latest chosen branch
+- the selected strategy branch
+- branch telemetry snapshots
 
 ## Notes On Git Hygiene
 
