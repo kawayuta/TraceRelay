@@ -8,6 +8,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-336791?logo=postgresql&logoColor=white)](#current-working-stack)
 [![Flask UI](https://img.shields.io/badge/Flask%20UI-Supported-F59E0B?logo=flask&logoColor=white)](#public-surfaces)
 
+![TraceRelay](./docs/images/inst.png)
+
 Task-first runtime for schema evolution, shared memory, and gap-driven agent workflows.
 
 TraceRelay is a local-first system that lets an LLM or agent:
