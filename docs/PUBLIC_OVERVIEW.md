@@ -90,13 +90,9 @@ That makes the system easy to inspect, run offline, and adapt.
 
 The task list is the operational front page for the runtime. It shows subjects, families, and final task status.
 
-![Task list screenshot](images/tasks-page.png)
-
 ### Task Trace
 
 The trace page shows how a task evolved, including schema lineage, runtime flowchart, and decision tree.
-
-![Google task trace screenshot](images/google-trace-page.png)
 
 ## Typical Use Cases
 
