@@ -1,0 +1,24 @@
+flowchart LR
+    A["User Prompt"] --> B["Prompt Memory Recall"]
+    B --> C["Interpret Task"]
+    C --> D["Family Recheck"]
+    D --> E["Evidence Bundle"]
+    E --> F{"Family Ambiguous?"}
+    F -->|"Yes"| G["Probe Family Candidates"]
+    F -->|"No"| H["Reuse or Build Schema"]
+    G --> H
+    H --> I["Structured Extraction"]
+    I --> J["Coverage Evaluation"]
+    J --> K{"Gap Type?"}
+    K -->|"Missing Values"| L["Probe Re-extract"]
+    K -->|"Missing Structure"| M["Probe Schema Evolution"]
+    K -->|"Complete"| N["Persist Lineage"]
+    L --> O["Select Best Strategy"]
+    M --> O
+    O -->|"Re-extract"| I
+    O -->|"Schema Evolution"| P["Apply New Schema Version"]
+    P --> I
+    N --> Q["Learn Task Memory"]
+    Q --> R["Plan Next Step"]
+    R --> S["Grounded Search or Follow-up"]
+

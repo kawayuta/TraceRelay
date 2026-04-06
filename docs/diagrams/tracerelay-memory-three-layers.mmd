@@ -1,0 +1,26 @@
+flowchart TD
+    A["Workspace Profile Memory"] --> A1["Preferred families"]
+    A --> A2["Recent subjects"]
+    A --> A3["Requested fields and relations"]
+
+    B["Subject Memory"] --> B1["Facts learned across runs"]
+    B --> B2["Related tasks"]
+    B --> B3["Subject-scoped retrieval"]
+
+    C["Task Memory Context"] --> C1["Prompt hits"]
+    C --> C2["Subject hits"]
+    C --> C3["Run-specific recall context"]
+
+    D["TaskRuntime"] --> E["Prompt Memory Recall"]
+    E --> A
+    D --> F["After Interpretation"]
+    F --> B
+    D --> G["Before Next Decision"]
+    G --> C
+    A --> H["Reduce cold starts"]
+    B --> I["Reuse known facts"]
+    C --> J["Ground next action"]
+    H --> K["Evidence Bundle"]
+    I --> K
+    J --> K
+

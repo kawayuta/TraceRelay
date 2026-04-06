@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant U as "Plugin or MCP Client"
+    participant M as "TraceRelay MCP"
+    participant R as "TaskRuntime"
+    participant S as "Artifact Store"
+    participant P as "PostgreSQL + Web"
+
+    U->>M: "structure_subject(prompt)"
+    M->>R: "submit task_evolve"
+    alt "finishes within soft wait"
+        R->>S: "persist lineage"
+        S->>P: "project task"
+        M-->>U: "run + schema + trace"
+    else "takes longer"
+        M-->>U: "pending true + task_id + job_id"
+        U->>M: "task_status(task_id or job_id)"
+        R->>S: "finish in background"
+        S->>P: "project task"
+        M-->>U: "completed status"
+    end
+    U->>M: "inspect_latest_changes or task_trace"
+    M-->>U: "family review, strategy, memory, gaps"

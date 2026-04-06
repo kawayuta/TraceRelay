@@ -1,0 +1,53 @@
+flowchart LR
+    subgraph A["Entry Surfaces"]
+        A1["Codex Plugin"]
+        A2["Claude Code Plugin"]
+        A3["LM Studio MCP Client"]
+        A4["Direct Python Runtime"]
+        A5["Flask Web UI"]
+    end
+
+    subgraph B["Runtime Layer"]
+        B1["FastMCP Server"]
+        B2["TaskRuntime"]
+        B3["Evidence + Branch Controller"]
+    end
+
+    subgraph C["Model Layer"]
+        C1["LM Studio"]
+        C2["Ollama"]
+        C3["OpenAI"]
+        C4["Gemini"]
+    end
+
+    subgraph D["Persistence Layer"]
+        D1["JSONL Artifact Store"]
+        D2["Memory Documents"]
+        D3["PostgreSQL Projection"]
+    end
+
+    subgraph E["Read Surfaces"]
+        E1["Trace UI"]
+        E2["MCP Tools + Resources"]
+        E3["Plugin Skills"]
+    end
+
+    A1 --> B1
+    A2 --> B1
+    A3 --> B1
+    A4 --> B2
+    A5 --> E1
+    B1 --> B2
+    B2 --> B3
+    B2 --> C1
+    B2 --> C2
+    B2 --> C3
+    B2 --> C4
+    B2 --> D1
+    B2 --> D2
+    D1 --> D3
+    D2 --> D3
+    D3 --> E1
+    D3 --> E2
+    E2 --> E3
+
