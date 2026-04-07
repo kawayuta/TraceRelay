@@ -8,6 +8,34 @@
   {% endif %}
 {% endmacro %}
 
+{% macro render_tree(node, level=0, open_level=1) %}
+  <div class="tree-node level-{{ level }}">
+    <details class="tree-branch" {% if level < open_level %}open{% endif %}>
+      <summary class="tree-summary">
+        <span class="tree-summary-main">
+          <span class="tree-bullet"></span>
+          <span class="tree-title">{{ node.title }}</span>
+        </span>
+        {% if node.lines %}
+          <span class="tree-badge">{{ node.lines|length }} notes</span>
+        {% endif %}
+      </summary>
+      {% if node.lines %}
+        <div class="tree-body">
+          {{ render_lines(node.lines, "compact-list compact-list-tight") }}
+        </div>
+      {% endif %}
+      {% if node.children %}
+        <div class="tree-children">
+          {% for child in node.children %}
+            {{ render_tree(child, level + 1, open_level) }}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </details>
+  </div>
+{% endmacro %}
+
 {% macro render_code_panel(title, code, disclosure_label=None, open=False, panel_class="") %}
   {% set code_lines = (code or "{}").split("\n") %}
   {% if disclosure_label %}

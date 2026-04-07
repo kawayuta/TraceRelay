@@ -601,14 +601,18 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert trace_payload["summary"]["family"] == "organization"
     assert trace_payload["flowchart"]["nodes"][0]["artifact_type"] == "task_prompt"
     assert "Execution Loop" in [child["title"] for child in trace_payload["decision_tree"]["children"]]
+    assert "Runtime Evolution" in [child["title"] for child in trace_payload["evolution_tree"]["children"]]
+    assert "Memory Evolution" in [child["title"] for child in trace_payload["evolution_tree"]["children"]]
+    assert "Web / MCP Surfaces" in [child["title"] for child in trace_payload["evolution_tree"]["children"]]
     task_schema = client.get(f"/api/tasks/{google.task_id}/schema")
     assert task_schema.status_code == 200
     assert task_schema.get_json()["active_schema"]["version"] == 2
     trace_page = client.get(f"/tasks/{google.task_id}")
     assert trace_page.status_code == 200
     trace_html = trace_page.get_data(as_text=True)
-    assert "Execution tree" in trace_html
+    assert "Lineage Tree" in trace_html
     assert "Artifact Ledger" in trace_html
+    assert "Web / MCP Surfaces" in trace_html
     assert "Google" in trace_html
 
     server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
@@ -749,6 +753,7 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert profile_payload["kind"] == "profile"
     assert profile_payload["profile_id"] == "workspace"
     assert profile_payload["stats"][0]["value"] == 2
+    assert profile_payload["lineage_tree"]["title"] == "Workspace Memory Bracket"
 
     search_payload = client.get("/api/memory/search?q=Google").get_json()
     assert search_payload["strategy"] == "hash_vector_v1"
@@ -760,22 +765,27 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     assert subject_payload["subject"] == "Google"
     assert subject_payload["related_tasks"][0]["task_id"] == google.task_id
     assert subject_payload["learned_facts"]
+    assert subject_payload["lineage_tree"]["title"] == "Subject Memory Bracket"
 
     task_memory_payload = client.get(f"/api/memory/tasks/{google.task_id}").get_json()
     assert task_memory_payload["kind"] == "task"
     assert task_memory_payload["task_id"] == google.task_id
     assert "Google" in task_memory_payload["recall_context"]
+    assert task_memory_payload["lineage_tree"]["title"] == "Task Lineage Bracket"
 
     memory_html = client.get("/memory")
     assert memory_html.status_code == 200
     assert "Memory Browser" in memory_html.get_data(as_text=True)
+    assert "Lineage Tree" in memory_html.get_data(as_text=True)
     subject_html = client.get("/memory/subjects/Google")
     assert subject_html.status_code == 200
     assert "Subject Memory: Google" in subject_html.get_data(as_text=True)
     assert "No learned facts recorded yet." not in subject_html.get_data(as_text=True)
+    assert "Subject Memory Bracket" in subject_html.get_data(as_text=True)
     task_html = client.get(f"/memory/tasks/{google.task_id}")
     assert task_html.status_code == 200
     assert "Task Snapshot" in task_html.get_data(as_text=True)
+    assert "Task Lineage Bracket" in task_html.get_data(as_text=True)
 
     server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
     description = server.describe()

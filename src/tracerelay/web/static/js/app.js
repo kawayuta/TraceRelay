@@ -329,21 +329,27 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const treeRoot = document.querySelector("[data-tree-root]");
-  const expandButton = document.querySelector("[data-tree-expand]");
-  const collapseButton = document.querySelector("[data-tree-collapse]");
+  const treeRoots = [...document.querySelectorAll("[data-tree-root]")];
+  const getTreeRoot = (name) =>
+    treeRoots.find((node) => node.dataset.treeRoot === name) || null;
 
-  expandButton?.addEventListener("click", () => {
-    treeRoot?.querySelectorAll("details").forEach((node) => {
-      node.open = true;
+  for (const button of document.querySelectorAll("[data-tree-expand]")) {
+    button.addEventListener("click", () => {
+      const root = getTreeRoot(button.dataset.treeExpand);
+      root?.querySelectorAll("details").forEach((node) => {
+        node.open = true;
+      });
     });
-  });
+  }
 
-  collapseButton?.addEventListener("click", () => {
-    treeRoot?.querySelectorAll("details").forEach((node, index) => {
-      node.open = index === 0;
+  for (const button of document.querySelectorAll("[data-tree-collapse]")) {
+    button.addEventListener("click", () => {
+      const root = getTreeRoot(button.dataset.treeCollapse);
+      root?.querySelectorAll("details").forEach((node, index) => {
+        node.open = index === 0;
+      });
     });
-  });
+  }
 
   const attemptRows = [...document.querySelectorAll("[data-attempt-row]")];
   const attemptInspector = {

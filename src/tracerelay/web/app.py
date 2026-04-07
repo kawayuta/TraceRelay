@@ -13,7 +13,12 @@ from ..action_planning import (
     build_next_step_plan,
     build_search_query_plan,
 )
-from .repository import TaskBrowseRepository, _memory_record_matches_subject, _normalize_subject_key
+from .repository import (
+    TaskBrowseRepository,
+    _memory_record_matches_subject,
+    _normalize_subject_key,
+    build_task_memory_records,
+)
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u3040-\u30ff\u4e00-\u9fff]+")
 
@@ -34,11 +39,9 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     @app.get("/tasks/<task_id>")
     def task_trace_page(task_id: str) -> object:
         try:
-            task = repository.get_task(task_id)
-            trace = repository.get_task_trace(task_id)
+            task, trace, memory_panel = _build_enriched_task_trace(repository, task_id)
         except KeyError:
             abort(404)
-        memory_panel = build_task_trace_memory_panel(repository, task_id, trace)
         operator_view = build_trace_operator_view(task, memory_panel=memory_panel)
         return render_template(
             "task_trace.html",
@@ -133,7 +136,8 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
     @app.get("/api/tasks/<task_id>/trace")
     def get_task_trace(task_id: str) -> object:
         try:
-            return jsonify(repository.get_task_trace(task_id))
+            _, trace, _ = _build_enriched_task_trace(repository, task_id)
+            return jsonify(trace)
         except KeyError:
             abort(404)
 
@@ -184,6 +188,23 @@ def create_app(repository: TaskBrowseRepository) -> Flask:
             abort(404)
 
     return app
+
+
+def _build_enriched_task_trace(
+    repository: TaskBrowseRepository,
+    task_id: str,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object] | None]:
+    task = repository.get_task(task_id)
+    trace = repository.get_task_trace(task_id)
+    memory_panel = build_task_trace_memory_panel(repository, task_id, trace)
+    trace["evolution_tree"] = build_task_evolution_tree(
+        repository,
+        task_id,
+        task,
+        trace,
+        memory_panel=memory_panel,
+    )
+    return task, trace, memory_panel
 
 
 def build_memory_search(
@@ -572,6 +593,130 @@ def build_trace_operator_view(
     }
 
 
+def build_task_evolution_tree(
+    repository: TaskBrowseRepository,
+    task_id: str,
+    task: dict[str, object],
+    trace: dict[str, object],
+    *,
+    memory_panel: dict[str, object] | None = None,
+) -> dict[str, object]:
+    interpretation = dict(task.get("interpretation") or {})
+    run = dict(task.get("run") or {})
+    subject = str(interpretation.get("resolved_subject") or "").strip()
+    family = str(interpretation.get("family") or "")
+    artifacts = list(repository.read_artifacts(task_id))
+    local_memory_records = list(build_task_memory_records(task_id, artifacts))
+    local_memory_nodes = [_memory_record_tree_node(record) for record in local_memory_records]
+
+    related_subject_summary = repository.get_subject_memory(subject) if subject else {}
+    related_subject_docs = [
+        record
+        for record in related_subject_summary.get("memory_documents", [])
+        if str(record.get("task_id", "")) != task_id
+    ]
+    related_subject_contexts = [
+        record
+        for record in related_subject_summary.get("task_memory_contexts", [])
+        if str(record.get("task_id", "")) != task_id
+    ]
+    subject_children = [_memory_record_tree_node(record) for record in related_subject_docs[:4]]
+    subject_children.extend(_memory_record_tree_node(record) for record in related_subject_contexts[:3])
+
+    profile_key = str(memory_panel.get("profile_key") or "") if memory_panel else ""
+    profile_record = None
+    if profile_key:
+        try:
+            profile_record = repository.get_user_profile(profile_key)
+        except KeyError:
+            profile_record = None
+    memory_subject = subject or (str(memory_panel.get("subject_key", "")) if memory_panel else "") or "n/a"
+
+    memory_children = [
+        {
+            "title": "Task Memory Formation",
+            "lines": _dedupe_lines(
+                [
+                    f"profile: {profile_key or 'default'}",
+                    f"subject: {memory_subject}",
+                    f"family: {family or 'n/a'}",
+                    f"memory records: {len(local_memory_records)}",
+                ]
+            ),
+            "children": local_memory_nodes,
+        },
+        {
+            "title": "Subject Recall Pool",
+            "lines": _dedupe_lines(
+                [
+                    f"subject: {subject or 'n/a'}",
+                    f"related documents: {len(related_subject_docs)}",
+                    f"related contexts: {len(related_subject_contexts)}",
+                    f"profiles: {len(related_subject_summary.get('profiles', []))}",
+                ]
+            ),
+            "children": subject_children
+            or [
+                {
+                    "title": "No related subject lineage yet",
+                    "lines": ["No other task has formed subject-scoped memory yet."],
+                    "children": [],
+                }
+            ],
+        },
+    ]
+    if profile_record is not None:
+        payload = dict(profile_record.get("payload", {}))
+        memory_children.append(
+            {
+                "title": "Profile Snapshot",
+                "lines": _dedupe_lines(
+                    [
+                        str(profile_record.get("summary", "")),
+                        f"preferred locale: {payload.get('preferred_locale', 'auto')}",
+                        f"top families: {', '.join(payload.get('top_families', [])[:4]) or 'n/a'}",
+                        f"top subjects: {', '.join(payload.get('top_subjects', [])[:4]) or 'n/a'}",
+                    ]
+                ),
+                "children": [],
+            }
+        )
+
+    return {
+        "title": "Task Lineage Bracket",
+        "lines": _dedupe_lines(
+            [
+                f"subject: {subject or task_id}",
+                f"family: {family or 'n/a'}",
+                f"status: {run.get('status', '') or 'unknown'} / {run.get('reason', '') or 'n/a'}",
+            ]
+        ),
+        "children": [
+            {
+                "title": "Runtime Evolution",
+                "lines": list(trace.get("decision_tree", {}).get("lines", [])),
+                "children": list(trace.get("decision_tree", {}).get("children", [])),
+            },
+            {
+                "title": "Memory Evolution",
+                "lines": _dedupe_lines(
+                    [
+                        f"current task memory: {len(local_memory_records)} records",
+                        f"related subject memory: {len(related_subject_docs) + len(related_subject_contexts)} records",
+                        f"profile: {profile_key or 'default'}",
+                    ]
+                ),
+                "children": memory_children,
+            },
+            {
+                "title": "Web / MCP Surfaces",
+                "lines": ["The same lineage is browseable from pages, JSON APIs, and MCP tools."],
+                "children": _surface_tree_nodes(task_id=task_id, subject=subject, profile_id=profile_key or None),
+            },
+        ],
+    }
+
+
 def build_workspace_profile_memory(repository: TaskBrowseRepository, profile_id: str = "workspace") -> dict[str, object]:
     if profile_id != "workspace":
         profile = repository.get_user_profile(profile_id)
@@ -637,6 +782,16 @@ def build_workspace_profile_memory(repository: TaskBrowseRepository, profile_id:
                     "cards": recent_cards,
                 },
             ],
+            "lineage_tree": build_memory_lineage_tree(
+                repository,
+                {
+                    "kind": "profile",
+                    "profile_id": profile_id,
+                    "title": f"User Profile Memory: {profile_id}",
+                    "stats": [],
+                    "blocks": [],
+                },
+            ),
         }
 
     docs = _collect_memory_documents(repository)
@@ -729,6 +884,16 @@ def build_workspace_profile_memory(repository: TaskBrowseRepository, profile_id:
         ],
         "search_query": "",
         "blocks": blocks,
+        "lineage_tree": build_memory_lineage_tree(
+            repository,
+            {
+                "kind": "profile",
+                "profile_id": profile_id,
+                "title": "Workspace Profile Memory",
+                "stats": [],
+                "blocks": [],
+            },
+        ),
     }
 
 
@@ -797,6 +962,18 @@ def build_subject_memory(repository: TaskBrowseRepository, subject: str, limit: 
         "related_tasks": related_docs[:limit],
         "learned_facts": learned_facts,
         "recall_context": "\n".join(summary_lines + learned_facts[:8]),
+        "lineage_tree": build_memory_lineage_tree(
+            repository,
+            {
+                "kind": "subject",
+                "subject": subject,
+                "title": f"Subject Memory: {subject}",
+                "stats": [],
+                "blocks": [],
+                "related_tasks": related_docs[:limit],
+                "learned_facts": learned_facts,
+            },
+        ),
     }
 
 
@@ -870,6 +1047,155 @@ def build_task_memory_context(repository: TaskBrowseRepository, task_id: str, li
         "recall_context": "\n".join(_task_recall_context(task, learned_facts)),
         "latest_schema_version": latest_schema.get("version"),
         "latest_schema_id": latest_schema.get("schema_id"),
+        "lineage_tree": build_memory_lineage_tree(
+            repository,
+            {
+                "kind": "task",
+                "task_id": task_id,
+                "title": subject or task_id,
+                "stats": [],
+                "blocks": [],
+            },
+        ),
+    }
+
+
+def build_memory_lineage_tree(
+    repository: TaskBrowseRepository,
+    memory: dict[str, object],
+) -> dict[str, object]:
+    kind = str(memory.get("kind", "profile"))
+    if kind == "task":
+        task_id = str(memory.get("task_id", ""))
+        if task_id:
+            task = repository.get_task(task_id)
+            trace = repository.get_task_trace(task_id)
+            memory_panel = build_task_trace_memory_panel(repository, task_id, trace)
+            return build_task_evolution_tree(
+                repository,
+                task_id,
+                task,
+                trace,
+                memory_panel=memory_panel,
+            )
+
+    if kind == "subject":
+        subject = str(memory.get("subject", ""))
+        summary = repository.get_subject_memory(subject)
+        documents = [dict(record) for record in summary.get("memory_documents", [])]
+        contexts = [dict(record) for record in summary.get("task_memory_contexts", [])]
+        profiles = [dict(record) for record in summary.get("profiles", [])]
+        return {
+            "title": "Subject Memory Bracket",
+            "lines": _dedupe_lines(
+                [
+                    f"subject: {subject or 'n/a'}",
+                    f"documents: {len(documents)}",
+                    f"contexts: {len(contexts)}",
+                    f"profiles: {len(profiles)}",
+                ]
+            ),
+            "children": [
+                {
+                    "title": "Learned Facts",
+                    "lines": [str(item) for item in memory.get("learned_facts", [])[:8]] or ["No learned facts recorded yet."],
+                    "children": [],
+                },
+                {
+                    "title": "Memory Records",
+                    "lines": ["Task summaries, subject snapshots, and task contexts tied to this subject."],
+                    "children": [_memory_record_tree_node(record) for record in documents[:6] + contexts[:4]],
+                },
+                {
+                    "title": "Profiles",
+                    "lines": ["Profiles that have recalled or produced this subject memory."],
+                    "children": [_profile_tree_node(profile) for profile in profiles[:4]],
+                },
+                {
+                    "title": "Web / MCP Surfaces",
+                    "lines": ["Browse this subject through the same surface map used by task lineage."],
+                    "children": _surface_tree_nodes(subject=subject),
+                },
+            ],
+        }
+
+    if kind == "profile":
+        profile_id = str(memory.get("profile_id", "workspace"))
+        if profile_id == "workspace":
+            docs = _collect_memory_documents(repository)
+            profiles = [dict(profile) for profile in repository.list_user_profiles()]
+            top_subjects = [doc for doc in docs if doc.get("resolved_subject")][:6]
+            return {
+                "title": "Workspace Memory Bracket",
+                "lines": _dedupe_lines(
+                    [
+                        f"saved profiles: {len(profiles)}",
+                        f"task memories: {len(docs)}",
+                    ]
+                ),
+                "children": [
+                    {
+                        "title": "Profiles",
+                        "lines": ["Saved profile snapshots across the workspace."],
+                        "children": [_profile_tree_node(profile) for profile in profiles[:6]],
+                    },
+                    {
+                        "title": "Subject Branches",
+                        "lines": ["Most visible subjects in workspace memory."],
+                        "children": [
+                            {
+                                "title": str(doc.get("resolved_subject") or doc.get("task_id")),
+                                "lines": _dedupe_lines(
+                                    [
+                                        f"family: {doc.get('family') or 'n/a'}",
+                                        f"status: {doc.get('status') or 'n/a'}",
+                                        f"schema: v{doc.get('latest_schema_version') or 'n/a'}",
+                                    ]
+                                ),
+                                "children": [],
+                            }
+                            for doc in top_subjects
+                        ],
+                    },
+                    {
+                        "title": "Web / MCP Surfaces",
+                        "lines": ["Workspace memory can fan out into profile, subject, and task scopes."],
+                        "children": _surface_tree_nodes(profile_id=profile_id),
+                    },
+                ],
+            }
+
+        profile = repository.get_user_profile(profile_id)
+        payload = dict(profile.get("payload", {}))
+        docs = repository.list_memory_documents(profile_key=profile_id)
+        return {
+            "title": "Profile Memory Bracket",
+            "lines": _dedupe_lines(
+                [
+                    f"profile: {profile_id}",
+                    f"tasks: {payload.get('task_count', 0)}",
+                    f"preferred locale: {payload.get('preferred_locale', 'auto')}",
+                ]
+            ),
+            "children": [
+                _profile_tree_node(profile),
+                {
+                    "title": "Task Memory",
+                    "lines": ["Task memories associated with this profile."],
+                    "children": [_memory_record_tree_node(record) for record in docs[:8]],
+                },
+                {
+                    "title": "Web / MCP Surfaces",
+                    "lines": ["This profile is readable through web pages, APIs, and MCP tools."],
+                    "children": _surface_tree_nodes(profile_id=profile_id),
+                },
+            ],
+        }
+
+    return {
+        "title": "Memory Bracket",
+        "lines": ["No lineage is available for this memory scope."],
+        "children": [],
     }
 
 
@@ -1055,6 +1381,134 @@ def _memory_evidence_items(task_id: str, subject_summary: dict[str, object] | No
         if len(evidence) >= limit:
             break
     return evidence
+
+
+def _memory_record_tree_node(record: dict[str, object]) -> dict[str, object]:
+    payload = dict(record.get("payload", {}))
+    memory_type = str(record.get("memory_type", record.get("record_type", "memory_document")))
+    task_id = str(record.get("task_id", ""))
+    title = _memory_record_title(record)
+    lines = [
+        f"type: {memory_type}",
+        f"task: {task_id or 'workspace'}",
+        f"profile: {record.get('profile_key', '') or 'default'}",
+        f"subject: {payload.get('resolved_subject') or record.get('subject_key') or 'n/a'}",
+        f"family: {record.get('family', '') or 'n/a'}",
+        f"summary: {record.get('summary', '')}",
+    ]
+    if memory_type == "extraction_snapshot":
+        payload_data = dict(payload.get("payload", {}))
+        lines.extend(
+            [
+                f"attempt: {payload.get('attempt', 'n/a')}",
+                f"status: {payload.get('status', 'n/a')}",
+                f"keys: {', '.join(sorted(payload_data.keys())[:6]) or 'none'}",
+            ]
+        )
+    elif memory_type == "task_memory_context":
+        lines.extend(
+            [
+                f"task shape: {payload.get('task_shape', 'n/a')}",
+                f"intent: {payload.get('intent', 'n/a')}",
+                f"schema version: {payload.get('schema_version', 'n/a')}",
+                f"events: {len(payload.get('events', []))}",
+            ]
+        )
+    return {
+        "title": title,
+        "lines": _dedupe_lines(lines),
+        "children": [],
+    }
+
+
+def _memory_record_title(record: dict[str, object]) -> str:
+    memory_type = str(record.get("memory_type", record.get("record_type", "memory_document")))
+    if memory_type == "task_summary":
+        return "Task Summary Snapshot"
+    if memory_type == "subject_memory":
+        return "Subject Snapshot"
+    if memory_type == "task_memory_context":
+        return "Task Memory Context"
+    if memory_type == "extraction_snapshot":
+        payload = dict(record.get("payload", {}))
+        return f"Extraction Snapshot #{payload.get('attempt', '?')}"
+    if memory_type == "user_profile":
+        return f"Profile {record.get('profile_key', 'default')}"
+    return memory_type.replace("_", " ").title()
+
+
+def _profile_tree_node(profile: dict[str, object]) -> dict[str, object]:
+    payload = dict(profile.get("payload", {}))
+    return {
+        "title": f"Profile {profile.get('profile_key', 'default')}",
+        "lines": _dedupe_lines(
+            [
+                str(profile.get("summary", "")),
+                f"tasks: {payload.get('task_count', 0)}",
+                f"preferred locale: {payload.get('preferred_locale', 'auto')}",
+                f"top families: {', '.join(payload.get('top_families', [])[:4]) or 'n/a'}",
+                f"top subjects: {', '.join(payload.get('top_subjects', [])[:4]) or 'n/a'}",
+            ]
+        ),
+        "children": [],
+    }
+
+
+def _surface_tree_nodes(
+    *,
+    task_id: str | None = None,
+    subject: str | None = None,
+    profile_id: str | None = None,
+) -> list[dict[str, object]]:
+    encoded_subject = quote(subject, safe="") if subject else ""
+    profile_segment = profile_id or "workspace"
+    web_lines: list[str] = []
+    api_lines: list[str] = []
+    mcp_lines: list[str] = []
+
+    if task_id:
+        web_lines.extend(
+            [
+                f"/tasks/{task_id}",
+                f"/memory/tasks/{task_id}",
+            ]
+        )
+        api_lines.extend(
+            [
+                f"/api/tasks/{task_id}/trace",
+                f"/api/tasks/{task_id}/schema",
+                f"/api/tasks/{task_id}/events",
+                f"/api/memory/tasks/{task_id}",
+            ]
+        )
+        mcp_lines.extend(
+            [
+                f"task_trace(task_id={task_id})",
+                f"task_memory_context(task_id={task_id})",
+            ]
+        )
+
+    if subject and encoded_subject:
+        web_lines.append(f"/memory/subjects/{encoded_subject}")
+        api_lines.append(f"/api/memory/subjects/{encoded_subject}")
+        mcp_lines.append(f"subject_memory(subject={subject})")
+
+    if profile_segment:
+        web_lines.append("/memory" if profile_segment == "workspace" else f"/memory/profile/{profile_segment}")
+        api_lines.append(
+            "/api/memory/profile" if profile_segment == "workspace" else f"/api/memory/profile/{profile_segment}"
+        )
+        mcp_lines.append(
+            "memory_profile(profile_id=workspace)"
+            if profile_segment == "workspace"
+            else f"memory_profile(profile_id={profile_segment})"
+        )
+
+    return [
+        {"title": "Web Pages", "lines": _dedupe_lines(web_lines), "children": []},
+        {"title": "JSON APIs", "lines": _dedupe_lines(api_lines), "children": []},
+        {"title": "MCP Reads", "lines": _dedupe_lines(mcp_lines), "children": []},
+    ]
 
 
 def _attempt_next_action(

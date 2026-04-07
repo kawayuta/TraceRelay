@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% from "_ui_macros.html" import render_code_panel, render_lines %}
+{% from "_ui_macros.html" import render_code_panel, render_lines, render_tree %}
 
 {% macro render_row(card) %}
   <a class="memory-row" href="{{ card.href }}">
@@ -102,9 +102,9 @@
     <section class="surface memory-list-pane">
       <div class="section-header">
         <div>
-          <div class="section-kicker">Search</div>
-          <h2>Search recall</h2>
-          <p>Search first, then open the narrowest scope that still preserves provenance.</p>
+          <div class="section-kicker">Recall Workbench</div>
+          <h2>Search and lineage</h2>
+          <p>Search first, then flip to the bracket tree when you need to follow how this scope was formed.</p>
         </div>
       </div>
       <form class="filter-grid filter-grid-search" action="/memory/search" method="get">
@@ -119,40 +119,68 @@
         <button class="primary-button" type="submit">Search</button>
       </form>
 
-      <div class="memory-blocks top-gap">
-        {% for block in memory.blocks %}
-          <section class="subsurface memory-block">
+      <nav class="pane-tabs top-gap" aria-label="Memory workbench">
+        <button class="pane-tab is-active" type="button" data-pane-group="memory-main" data-pane-tab="blocks">Blocks</button>
+        <button class="pane-tab" type="button" data-pane-group="memory-main" data-pane-tab="tree">Lineage Tree</button>
+      </nav>
+
+      <div class="pane-stack top-gap">
+        <section class="pane-panel is-active" data-pane-group="memory-main" data-pane-panel="blocks">
+          <div class="memory-blocks">
+            {% for block in memory.blocks %}
+              <section class="subsurface memory-block">
+                <div class="section-header">
+                  <div>
+                    <div class="section-kicker">Memory Block</div>
+                    <h2>{{ block.title }}</h2>
+                    {% if block.description %}
+                      <p>{{ block.description }}</p>
+                    {% endif %}
+                  </div>
+                </div>
+
+                {% if block.lines %}
+                  {{ render_lines(block.lines, "compact-list") }}
+                {% endif %}
+
+                {% if block.chips %}
+                  <div class="chip-list top-gap-sm">
+                    {% for chip in block.chips %}
+                      <span class="table-chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+
+                {% if block.cards %}
+                  <div class="memory-row-list top-gap">
+                    {% for card in block.cards %}
+                      {{ render_row(card) }}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </section>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="pane-panel" data-pane-group="memory-main" data-pane-panel="tree">
+          <section class="subsurface memory-lineage-shell">
             <div class="section-header">
               <div>
-                <div class="section-kicker">Memory Block</div>
-                <h2>{{ block.title }}</h2>
-                {% if block.description %}
-                  <p>{{ block.description }}</p>
-                {% endif %}
+                <div class="section-kicker">Bracket View</div>
+                <h2>{{ memory.lineage_tree.title }}</h2>
+                <p>Follow the scope, the memory records it created, and the surfaces that expose it.</p>
+              </div>
+              <div class="header-actions">
+                <button class="ghost-button" type="button" data-tree-expand="memory-lineage">Expand all</button>
+                <button class="ghost-button" type="button" data-tree-collapse="memory-lineage">Collapse all</button>
               </div>
             </div>
-
-            {% if block.lines %}
-              {{ render_lines(block.lines, "compact-list") }}
-            {% endif %}
-
-            {% if block.chips %}
-              <div class="chip-list top-gap-sm">
-                {% for chip in block.chips %}
-                  <span class="table-chip"><strong>{{ chip.label }}</strong> {{ chip.value }}</span>
-                {% endfor %}
-              </div>
-            {% endif %}
-
-            {% if block.cards %}
-              <div class="memory-row-list top-gap">
-                {% for card in block.cards %}
-                  {{ render_row(card) }}
-                {% endfor %}
-              </div>
-            {% endif %}
+            <div class="tree-root tree-root-bracket" data-tree-root="memory-lineage">
+              {{ render_tree(memory.lineage_tree, open_level=2) }}
+            </div>
           </section>
-        {% endfor %}
+        </section>
       </div>
     </section>
 

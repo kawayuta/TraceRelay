@@ -1,33 +1,5 @@
 {% extends "layout.html" %}
-{% from "_ui_macros.html" import render_code_panel, render_lines %}
-
-{% macro render_tree(node, level=0) %}
-  <div class="tree-node level-{{ level }}">
-    <details class="tree-branch" {% if level == 0 %}open{% endif %}>
-      <summary class="tree-summary">
-        <span class="tree-summary-main">
-          <span class="tree-bullet"></span>
-          <span class="tree-title">{{ node.title }}</span>
-        </span>
-        {% if node.lines %}
-          <span class="tree-badge">{{ node.lines|length }} notes</span>
-        {% endif %}
-      </summary>
-      {% if node.lines %}
-        <div class="tree-body">
-          {{ render_lines(node.lines, "compact-list compact-list-tight") }}
-        </div>
-      {% endif %}
-      {% if node.children %}
-        <div class="tree-children">
-          {% for child in node.children %}
-            {{ render_tree(child, level + 1) }}
-          {% endfor %}
-        </div>
-      {% endif %}
-    </details>
-  </div>
-{% endmacro %}
+{% from "_ui_macros.html" import render_code_panel, render_lines, render_tree %}
 
 {% block title %}{{ trace.summary.resolved_subject or trace.task_id }}{% endblock %}
 {% block page_kicker %}<div class="page-kicker">Trace Detail</div>{% endblock %}
@@ -134,7 +106,7 @@
 
       <nav class="pane-tabs" aria-label="Trace workbench">
         <button class="pane-tab is-active" type="button" data-pane-group="trace-main" data-pane-tab="attempts">Attempts</button>
-        <button class="pane-tab" type="button" data-pane-group="trace-main" data-pane-tab="tree">Execution Tree</button>
+        <button class="pane-tab" type="button" data-pane-group="trace-main" data-pane-tab="tree">Lineage Tree</button>
         <button class="pane-tab" type="button" data-pane-group="trace-main" data-pane-tab="artifacts">Artifacts</button>
       </nav>
 
@@ -209,16 +181,17 @@
         <section class="pane-panel" data-pane-group="trace-main" data-pane-panel="tree">
           <div class="section-header">
             <div>
-              <div class="section-kicker">Decision Trace</div>
-              <h2>Execution tree</h2>
+              <div class="section-kicker">Unified Lineage</div>
+              <h2>Runtime, memory, and surfaces</h2>
+              <p>Read the task as one bracketed tree instead of splitting runtime and memory into separate mental models.</p>
             </div>
             <div class="header-actions">
-              <button class="ghost-button" type="button" data-tree-expand>Expand all</button>
-              <button class="ghost-button" type="button" data-tree-collapse>Collapse all</button>
+              <button class="ghost-button" type="button" data-tree-expand="trace-lineage">Expand all</button>
+              <button class="ghost-button" type="button" data-tree-collapse="trace-lineage">Collapse all</button>
             </div>
           </div>
-          <div class="tree-root" data-tree-root>
-            {{ render_tree(trace.decision_tree) }}
+          <div class="tree-root tree-root-bracket" data-tree-root="trace-lineage">
+            {{ render_tree(trace.evolution_tree, open_level=2) }}
           </div>
         </section>
 
