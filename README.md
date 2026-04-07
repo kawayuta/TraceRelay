@@ -15,6 +15,7 @@ Task-first runtime for schema evolution, shared memory, and gap-driven agent wor
 TraceRelay is a local-first system that lets an LLM or agent:
 
 - interpret a task and resolve the subject,
+- split composite subjects into atomic branches when the task is comparative or relationship-oriented,
 - recheck the abstract schema family when the requested shape points to a better fit,
 - reuse prior memory before taking the next step,
 - generate or reuse a schema,
@@ -70,6 +71,7 @@ Default `.env.example` targets LM Studio. If you want Ollama or external embeddi
 - Relay memory across long tasks: each extraction round leaves behind structured outputs that the next round can reuse.
 - Shared memory across agents: Codex, Claude Code, LM Studio, and MCP clients can work against the same live memory and lineage instead of keeping isolated assistant-local recall.
 - Traceable decisions: interpretation, extraction, coverage, schema evolution, retries, and failures are persisted as lineage.
+- Inspectable subject graphs: composite prompts can materialize subject topology, persisted task relations, and subject relations that stay visible in Web and MCP.
 - Lower waste, fewer hallucinations: gap-directed retries reduce token burn, redundant prompting, malformed search, and unsupported guesses.
 - Operational surfaces: the same runtime is exposed through Web, PostgreSQL, MCP, Codex, Claude Code, and LM Studio.
 - Flexible deployment control: run locally with LM Studio or Ollama, use OpenAI-compatible APIs or Gemini APIs when needed, keep data in PostgreSQL, inspect everything in Flask, and avoid locking the runtime to a single hosted pipeline.
@@ -125,6 +127,7 @@ Plugin routing is more conservative than direct MCP use, so the plugin relies on
 Before using either plugin, start the docker stack so the shared MCP endpoint is live: `docker compose up -d --build postgres web mcp`.
 The plugin is designed to prefer TraceRelay before broad search: first structure or continue the task, then inspect information gaps, then prepare grounded search queries only if external search is still needed.
 Long-running plugin calls may return a background `job_id` instead of blocking until the full run completes. Poll `task_status` with `task_id` or `job_id` when `task_evolve`, `structure_subject`, or `continue_prior_work` returns `pending: true`.
+When a prompt resolves to a composite subject such as a comparison or relationship request, the runtime can persist a subject graph, spawn child task branches, and expose the resulting graph through dedicated MCP tools and resources.
 
 ### Codex
 
@@ -190,32 +193,37 @@ flowchart TD
     D --> I[TaskRuntime.run_task]
     H -->|task_evolve| I
 
-	    I --> J[Prompt Memory Recall]
-	    J --> K[LLM Task Interpretation]
-	    K --> L[LLM Family Recheck]
-	    L --> M[Subject Memory Recall]
-	    M --> M1[Task Evidence Bundle]
-	    M1 --> M2{Family Ambiguous?}
-	    M2 -->|Yes| M3[Probe Initial and Reviewed Families]
-	    M3 --> M4[Select Family Branch]
-	    M2 -->|No| N{Existing Schema?}
-	    M4 --> N
-	    N -->|No| O[LLM Initial Schema]
-	    N -->|Yes| P[Reuse Latest Schema]
-	    O --> Q[LLM Extraction]
-	    P --> Q
-	    Q --> R[Coverage Evaluation]
-	    R --> R1[Heuristic Branch Plan]
-	    R1 --> R2{Need Shadow Strategy Probe?}
-	    R2 -->|Yes| R3[Probe Re-extract and Schema Evolution]
-	    R3 --> R4[Select Strategy Branch]
-	    R2 -->|No| R4
-	    R4 -->|Missing Values| S[Re-extract]
-	    S --> Q
-	    R4 -->|Missing Structure| T[LLM Schema Evolution]
-	    T --> U[Apply New Schema Version with Deprecation Hints]
-	    U --> Q
-	    R4 -->|Complete or Stop| V[Persist Artifact Lineage]
+        I --> J[Prompt Memory Recall]
+        J --> K[LLM Task Interpretation]
+        K --> K1[Subject Graph Resolution]
+        K1 --> K2{Composite Scope?}
+        K2 -->|Yes| K3[Spawn Atomic Child Branches]
+        K3 --> K4[Join Branch Evidence]
+        K2 -->|No| L[LLM Family Recheck]
+        K4 --> L
+        L --> M[Subject Memory Recall]
+        M --> M1[Task Evidence Bundle]
+        M1 --> M2{Family Ambiguous?}
+        M2 -->|Yes| M3[Probe Initial and Reviewed Families]
+        M3 --> M4[Select Family Branch]
+        M2 -->|No| N{Existing Schema?}
+        M4 --> N
+        N -->|No| O[LLM Initial Schema]
+        N -->|Yes| P[Reuse Latest Schema]
+        O --> Q[LLM Extraction]
+        P --> Q
+        Q --> R[Coverage Evaluation]
+        R --> R1[Heuristic Branch Plan]
+        R1 --> R2{Need Shadow Strategy Probe?}
+        R2 -->|Yes| R3[Probe Re-extract and Schema Evolution]
+        R3 --> R4[Select Strategy Branch]
+        R2 -->|No| R4
+        R4 -->|Missing Values| S[Re-extract]
+        S --> Q
+        R4 -->|Missing Structure| T[LLM Schema Evolution]
+        T --> U[Apply New Schema Version with Deprecation Hints]
+        U --> Q
+        R4 -->|Complete or Stop| V[Persist Artifact Lineage]
 
     V --> W1[Analyze Information Gaps]
     W1 --> W2[Plan Next Step]
@@ -240,9 +248,11 @@ Notes:
 - Codex and Claude Code enter through plugin-managed HTTP MCP.
 - LM Studio enters through TraceRelay's MCP server over HTTP at `/mcp`.
 - MCP `task_evolve` and direct Python usage both converge on the same `TaskRuntime`.
+- Composite scopes can split into atomic child tasks, then rejoin as persisted subject graphs and task relations.
 - The interpretation path can revise `family` before schema selection, and ambiguous cases can now probe both the initial and reviewed family before locking the final family.
 - `inspect_latest_changes` exposes `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, and the latest chosen branch.
 - Runtime decisions now emit a task evidence bundle, family probe scores, strategy probe scores, and telemetry-aware branch snapshots before re-extract or schema evolution proceeds.
+- Dedicated MCP `subject_graph`, `task_relations`, and `subject_relations` surfaces expose the persisted branch topology without forcing clients to parse the full task payload.
 - Schema evolution can now persist deprecation metadata and pruning hints, so stale keys can be marked without losing lineage.
 - Long-running MCP entrypoints now return a background `job_id` and switch to `task_status` polling instead of forcing the client to wait through the whole run.
 - After each run, TraceRelay can expose gap analysis, next-step planning, and grounded search-query suggestions through MCP and HTTP APIs.
@@ -625,6 +635,9 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `continue_prior_work` - may return `pending: true` with `job_id` for long runs
 - `structure_subject` - may return `pending: true` with `job_id` for long runs
 - `inspect_latest_changes` - includes retries, family rechecks, and schema updates
+- `subject_graph` - read the task subject graph, branch plan, and branch bundle
+- `task_relations` - read persisted parent/child task relations for a task
+- `subject_relations` - read persisted subject graph relations for a subject or scope
 - `analyze_information_gaps`
 - `prepare_search_queries`
 - `plan_next_step`
@@ -642,6 +655,8 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 
 - `tracerelay://tasks`
 - `tracerelay://tasks/{task_id}`
+- `tracerelay://tasks/{task_id}/subject-graph`
+- `tracerelay://tasks/{task_id}/task-relations`
 - `tracerelay://tasks/{task_id}/coverage`
 - `tracerelay://tasks/{task_id}/schema`
 - `tracerelay://tasks/{task_id}/events`
@@ -652,6 +667,7 @@ export TRACERELAY_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 - `tracerelay://memory/profile`
 - `tracerelay://memory/profile/{profile_id}`
 - `tracerelay://memory/subjects/{subject}`
+- `tracerelay://memory/subjects/{subject}/relations`
 - `tracerelay://memory/tasks/{task_id}`
 - `tracerelay://memory/search/{query}`
 
@@ -683,6 +699,9 @@ The system persists:
 - reviews,
 - task events,
 - task runs,
+- task subject graphs,
+- task relations,
+- subject relations,
 - memory documents,
 - task memory contexts,
 - user profiles.

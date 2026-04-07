@@ -48,6 +48,25 @@ class EvolutionController:
                     },
                 )
             )
+        branch_context = dict(interpretation.branch_context)
+        branch_children = [dict(item) for item in branch_context.get("children", [])]
+        if branch_children:
+            items.append(
+                EvidenceItem(
+                    evidence_id=next_id("evidence"),
+                    source="subject_branches",
+                    summary=(
+                        f"{len(branch_children)} branch task(s) materialized for "
+                        f"{interpretation.resolved_subject}"
+                    ),
+                    confidence=0.8,
+                    metadata={
+                        "scope_key": interpretation.scope_key,
+                        "branch_strategy": interpretation.branch_strategy,
+                        "child_task_ids": [str(item.get("task_id", "")) for item in branch_children],
+                    },
+                )
+            )
         if memory_context and memory_context.profile is not None:
             profile = memory_context.profile
             items.append(

@@ -29,6 +29,7 @@ from ..task_runtime import TaskRuntime
 from ..task_flow import JsonlArtifactStore
 from ..web.app import build_memory_search, build_subject_memory, build_task_memory_context, build_workspace_profile_memory
 from ..web.repository import PostgresTaskRepository, TaskBrowseRepository
+from .resources import _build_task_subject_graph
 
 logger = logging.getLogger("tracerelay.mcp")
 logger.setLevel(logging.INFO)
@@ -57,6 +58,18 @@ def list_tools() -> list[dict[str, object]]:
             "description": "Inspect what changed in the latest run, including retries, family rechecks, and schema updates.",
         },
         {"name": "task_trace", "description": "Return the task flowchart and decision trace."},
+        {
+            "name": "subject_graph",
+            "description": "Read the task subject graph, branch plan, and branch bundle.",
+        },
+        {
+            "name": "task_relations",
+            "description": "Read persisted parent/child task relations for a task.",
+        },
+        {
+            "name": "subject_relations",
+            "description": "Read persisted subject graph relations touching a subject or scope.",
+        },
         {"name": "schema_status", "description": "Return schema lineage for a task."},
         {"name": "schema_apply", "description": "Return the active schema after auto-apply evolution."},
         {"name": "artifact_read", "description": "Read artifacts for a task."},
@@ -258,6 +271,37 @@ class MCPToolbox:
             return result
         if name == "task_trace":
             result = self.repository.get_task_trace(str(arguments["task_id"]))
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "subject_graph":
+            task_id = self._resolve_latest_task_id(
+                task_id=_optional_string(arguments.get("task_id")),
+                subject=_optional_string(arguments.get("subject")),
+            )
+            if task_id is None:
+                result = {"found": False, "reason": "no_tasks"}
+                logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+                return result
+            result = {"found": True, **_build_task_subject_graph(self.repository, task_id)}
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "task_relations":
+            task_id = str(arguments["task_id"])
+            task = self.repository.get_task(task_id)
+            result = {
+                "task_id": task_id,
+                "resolved_subject": str(dict(task.get("interpretation") or {}).get("resolved_subject", "")),
+                "relations": self.repository.list_task_relations(task_id),
+            }
+            logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
+            return result
+        if name == "subject_relations":
+            subject = str(arguments["subject"])
+            result = {
+                "subject": subject,
+                "subject_key": normalize_subject(subject),
+                "relations": self.repository.list_subject_relations(subject),
+            }
             logger.info("TraceRelay MCP tool end name=%s result=%s", name, _summarize_result(result))
             return result
         if name == "schema_status":
@@ -554,15 +598,25 @@ class MCPToolbox:
     def _resolve_latest_task_id(self, *, task_id: str | None = None, subject: str | None = None) -> str | None:
         if task_id:
             return task_id
+        tasks = self.repository.list_tasks()
         if subject:
             normalized_subject = normalize_subject(subject)
-            for task in self.repository.list_tasks():
+            for task in tasks:
                 if normalize_subject(str(task.get("resolved_subject", ""))) == normalized_subject:
                     return str(task["task_id"])
+            subject_memory = self.repository.get_subject_memory(subject)
+            candidate_task_ids = {
+                str(record.get("task_id", ""))
+                for record in subject_memory.get("memory_documents", []) + subject_memory.get("task_memory_contexts", [])
+                if str(record.get("task_id", "")).strip()
+            }
+            if candidate_task_ids:
+                for task in tasks:
+                    if str(task.get("task_id", "")) in candidate_task_ids:
+                        return str(task["task_id"])
             matches = self.repository.search(subject)
             if matches:
                 return str(matches[0]["task_id"])
-        tasks = self.repository.list_tasks()
         if not tasks:
             return None
         return str(tasks[0]["task_id"])
@@ -729,6 +783,35 @@ def register_tools(mcp: FastMCP, toolbox: MCPToolbox) -> None:
     )
     def task_trace(task_id: str) -> dict[str, object]:
         return dict(toolbox.call("task_trace", {"task_id": task_id}))
+
+    @mcp.tool(
+        name="subject_graph",
+        description="Read the task subject graph, branch plan, and branch bundle.",
+    )
+    def subject_graph(task_id: str | None = None, subject: str | None = None) -> dict[str, object]:
+        return dict(
+            toolbox.call(
+                "subject_graph",
+                {
+                    **({"task_id": task_id} if task_id else {}),
+                    **({"subject": subject} if subject else {}),
+                },
+            )
+        )
+
+    @mcp.tool(
+        name="task_relations",
+        description="Read persisted parent/child task relations for a task.",
+    )
+    def task_relations(task_id: str) -> dict[str, object]:
+        return dict(toolbox.call("task_relations", {"task_id": task_id}))
+
+    @mcp.tool(
+        name="subject_relations",
+        description="Read persisted subject graph relations touching a subject or scope.",
+    )
+    def subject_relations(subject: str) -> dict[str, object]:
+        return dict(toolbox.call("subject_relations", {"subject": subject}))
 
     @mcp.tool(
         name="schema_status",

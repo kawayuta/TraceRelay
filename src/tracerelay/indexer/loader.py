@@ -79,6 +79,20 @@ class TaskRuntimeProjector:
                         },
                     )
                 )
+            elif artifact.artifact_type == "task_subject_graph":
+                rows.append(
+                    ProjectionRow(
+                        table="task_subject_graph",
+                        values={
+                            "task_id": artifact.task_id,
+                            "artifact_id": artifact.artifact_id,
+                            "scope_key": payload.get("scope_key"),
+                            "topology": payload.get("subject_topology"),
+                            "branch_strategy": payload.get("branch_strategy"),
+                            "payload": payload,
+                        },
+                    )
+                )
             elif artifact.artifact_type == "task_run":
                 rows.append(
                     ProjectionRow(
@@ -127,6 +141,42 @@ class TaskRuntimeProjector:
                             "artifact_id": artifact.artifact_id,
                             "payload": payload,
                         },
+                    )
+                )
+            elif artifact.artifact_type == "task_relation":
+                rows.append(
+                    ProjectionRow(
+                        table="task_relation",
+                        values={
+                            "relation_id": payload.get("relation_id"),
+                            "artifact_id": artifact.artifact_id,
+                            "task_id": artifact.task_id,
+                            "parent_task_id": payload.get("parent_task_id"),
+                            "child_task_id": payload.get("child_task_id"),
+                            "relation_type": payload.get("relation_type"),
+                            "ordinal": payload.get("ordinal"),
+                            "branch_subject": payload.get("branch_subject"),
+                            "branch_subject_key": payload.get("branch_subject_key"),
+                            "payload": payload,
+                        },
+                        conflict_columns=("relation_id",),
+                    )
+                )
+            elif artifact.artifact_type == "subject_relation":
+                rows.append(
+                    ProjectionRow(
+                        table="subject_relation",
+                        values={
+                            "relation_id": payload.get("relation_id"),
+                            "artifact_id": artifact.artifact_id,
+                            "task_id": artifact.task_id,
+                            "source_subject_key": payload.get("source_subject_key"),
+                            "target_subject_key": payload.get("target_subject_key"),
+                            "relation_type": payload.get("relation_type"),
+                            "scope_key": payload.get("scope_key"),
+                            "payload": payload,
+                        },
+                        conflict_columns=("relation_id",),
                     )
                 )
             elif artifact.artifact_type == "schema_candidate":

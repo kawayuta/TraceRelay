@@ -603,6 +603,9 @@ def build_task_evolution_tree(
 ) -> dict[str, object]:
     interpretation = dict(task.get("interpretation") or {})
     run = dict(task.get("run") or {})
+    task_relations = repository.list_task_relations(task_id)
+    subject_scope_key = str(interpretation.get("scope_key") or interpretation.get("resolved_subject") or "").strip()
+    scope_relations = repository.list_subject_relations(subject_scope_key) if subject_scope_key else []
     subject = str(interpretation.get("resolved_subject") or "").strip()
     family = str(interpretation.get("family") or "")
     artifacts = list(repository.read_artifacts(task_id))
@@ -610,6 +613,7 @@ def build_task_evolution_tree(
     local_memory_nodes = [_memory_record_tree_node(record) for record in local_memory_records]
 
     related_subject_summary = repository.get_subject_memory(subject) if subject else {}
+    related_subject_relations = repository.list_subject_relations(subject) if subject else []
     related_subject_docs = [
         record
         for record in related_subject_summary.get("memory_documents", [])
@@ -653,6 +657,7 @@ def build_task_evolution_tree(
                     f"related documents: {len(related_subject_docs)}",
                     f"related contexts: {len(related_subject_contexts)}",
                     f"profiles: {len(related_subject_summary.get('profiles', []))}",
+                    f"relations: {len(related_subject_relations)}",
                 ]
             ),
             "children": subject_children
@@ -660,6 +665,36 @@ def build_task_evolution_tree(
                 {
                     "title": "No related subject lineage yet",
                     "lines": ["No other task has formed subject-scoped memory yet."],
+                    "children": [],
+                }
+            ],
+        },
+        {
+            "title": "Subject Graph",
+            "lines": _dedupe_lines(
+                [
+                    f"scope or subject key: {subject or memory_subject}",
+                    f"relations: {len(related_subject_relations)}",
+                ]
+            ),
+            "children": [
+                {
+                    "title": str(relation.get("relation_type") or "relation"),
+                    "lines": _dedupe_lines(
+                        [
+                            f"source: {relation.get('source_subject_key') or 'n/a'}",
+                            f"target: {relation.get('target_subject_key') or 'n/a'}",
+                            f"scope: {relation.get('scope_key') or 'n/a'}",
+                        ]
+                    ),
+                    "children": [],
+                }
+                for relation in related_subject_relations[:6]
+            ]
+            or [
+                {
+                    "title": "No subject graph relations yet",
+                    "lines": ["No persisted subject edges have been recorded for this subject yet."],
                     "children": [],
                 }
             ],
@@ -696,6 +731,43 @@ def build_task_evolution_tree(
                 "title": "Runtime Evolution",
                 "lines": list(trace.get("decision_tree", {}).get("lines", [])),
                 "children": list(trace.get("decision_tree", {}).get("children", [])),
+            },
+            {
+                "title": "Task Graph",
+                "lines": _dedupe_lines(
+                    [
+                        f"task relations: {len(task_relations)}",
+                        f"subject relations: {len(scope_relations)}",
+                    ]
+                ),
+                "children": [
+                    {
+                        "title": str(relation.get("relation_type") or "task relation"),
+                        "lines": _dedupe_lines(
+                            [
+                                f"parent: {relation.get('parent_task_id') or 'n/a'}",
+                                f"child: {relation.get('child_task_id') or 'n/a'}",
+                                f"branch subject: {relation.get('branch_subject') or 'n/a'}",
+                            ]
+                        ),
+                        "children": [],
+                    }
+                    for relation in task_relations[:6]
+                ]
+                + [
+                    {
+                        "title": str(relation.get("relation_type") or "subject relation"),
+                        "lines": _dedupe_lines(
+                            [
+                                f"source: {relation.get('source_subject_key') or 'n/a'}",
+                                f"target: {relation.get('target_subject_key') or 'n/a'}",
+                                f"scope: {relation.get('scope_key') or 'n/a'}",
+                            ]
+                        ),
+                        "children": [],
+                    }
+                    for relation in scope_relations[:6]
+                ],
             },
             {
                 "title": "Memory Evolution",
@@ -1082,6 +1154,7 @@ def build_memory_lineage_tree(
     if kind == "subject":
         subject = str(memory.get("subject", ""))
         summary = repository.get_subject_memory(subject)
+        relations = repository.list_subject_relations(subject)
         documents = [dict(record) for record in summary.get("memory_documents", [])]
         contexts = [dict(record) for record in summary.get("task_memory_contexts", [])]
         profiles = [dict(record) for record in summary.get("profiles", [])]
@@ -1093,6 +1166,7 @@ def build_memory_lineage_tree(
                     f"documents: {len(documents)}",
                     f"contexts: {len(contexts)}",
                     f"profiles: {len(profiles)}",
+                    f"relations: {len(relations)}",
                 ]
             ),
             "children": [
@@ -1110,6 +1184,31 @@ def build_memory_lineage_tree(
                     "title": "Profiles",
                     "lines": ["Profiles that have recalled or produced this subject memory."],
                     "children": [_profile_tree_node(profile) for profile in profiles[:4]],
+                },
+                {
+                    "title": "Subject Graph",
+                    "lines": ["Persisted graph edges touching this subject or composite scope."],
+                    "children": [
+                        {
+                            "title": str(relation.get("relation_type") or "relation"),
+                            "lines": _dedupe_lines(
+                                [
+                                    f"source: {relation.get('source_subject_key') or 'n/a'}",
+                                    f"target: {relation.get('target_subject_key') or 'n/a'}",
+                                    f"scope: {relation.get('scope_key') or 'n/a'}",
+                                ]
+                            ),
+                            "children": [],
+                        }
+                        for relation in relations[:8]
+                    ]
+                    or [
+                        {
+                            "title": "No subject graph relations yet",
+                            "lines": ["This subject has not been linked through a persisted graph edge yet."],
+                            "children": [],
+                        }
+                    ],
                 },
                 {
                     "title": "Web / MCP Surfaces",

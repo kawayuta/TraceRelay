@@ -291,12 +291,18 @@ class _PromptDrivenStructuredLLM:
             system_prompt=(
                 "TASK_INTERPRETATION\n"
                 "Return JSON with keys: intent, resolved_subject, subject_candidates, "
+                "subject_aliases, subject_topology, branch_strategy, scope_key, subject_participants, "
                 "family, family_rationale, requested_fields, requested_relations, "
                 "scope_hints, task_shape, locale.\n"
                 "Interpret 'family' as the abstract schema class, not the entity name.\n"
                 "Use a short snake_case type label such as organization, media_work, policy, "
                 "system_incident, relationship, franchise, supply_chain_relation.\n"
                 "Never return a company name, person name, title, or subject string in family.\n"
+                "subject_aliases must contain same-entity aliases only, not counterpart entities.\n"
+                "Use subject_participants only when the prompt is about multiple distinct entities or a composite scope.\n"
+                "Each subject_participant must include: subject, subject_key, role, aliases, family_hint, confidence, spawn.\n"
+                "Use subject_topology values such as atomic, pair, set, hierarchy, or comparison.\n"
+                "Use branch_strategy none for atomic subjects, or spawn_atomic_subjects for composite scopes that should fan out.\n"
                 "requested_fields and requested_relations must be atomic snake_case schema keys.\n"
                 "Use requested_fields for attributes directly attached to the subject.\n"
                 "Use requested_relations for links to other entities or regions.\n"
@@ -313,6 +319,13 @@ class _PromptDrivenStructuredLLM:
                     "requested_scope": list(spec.requested_scope),
                     "caller": spec.caller,
                     "user_id": spec.user_id,
+                    "parent_task_id": spec.parent_task_id,
+                    "root_task_id": spec.root_task_id,
+                    "branch_depth": spec.branch_depth,
+                    "branch_subject": spec.branch_subject,
+                    "branch_role": spec.branch_role,
+                    "disable_subject_branching": spec.disable_subject_branching,
+                    "execution_context": spec.execution_context,
                     "memory_context": spec.memory_context,
                 },
                 ensure_ascii=False,
@@ -330,7 +343,7 @@ class _PromptDrivenStructuredLLM:
                 "Return JSON with keys: family, family_rationale.\n"
                 "Re-evaluate only the abstract schema family for this task.\n"
                 "Use the prompt, resolved_subject, subject_candidates, intent, requested_fields, "
-                "requested_relations, scope_hints, and task_shape.\n"
+                "requested_relations, scope_hints, task_shape, subject_topology, and subject_participants.\n"
                 "Ignore historical family frequencies, user profile preferences, and stale memory.\n"
                 "Do not anchor on the current_family label if the requested schema shape points elsewhere.\n"
                 "Use a short snake_case type label such as organization, media_work, policy, "
@@ -352,6 +365,22 @@ class _PromptDrivenStructuredLLM:
                     "resolved_subject": interpretation.resolved_subject,
                     "subject_candidates": list(interpretation.subject_candidates),
                     "intent": interpretation.intent,
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "subject_topology": interpretation.subject_topology,
+                    "branch_strategy": interpretation.branch_strategy,
+                    "scope_key": interpretation.scope_key,
+                    "subject_participants": [
+                        {
+                            "subject": participant.subject,
+                            "subject_key": participant.subject_key,
+                            "role": participant.role,
+                            "aliases": list(participant.aliases),
+                            "family_hint": participant.family_hint,
+                            "confidence": participant.confidence,
+                            "spawn": participant.spawn,
+                        }
+                        for participant in interpretation.subject_participants
+                    ],
                     "requested_fields": list(interpretation.requested_fields),
                     "requested_relations": list(interpretation.requested_relations),
                     "scope_hints": list(interpretation.scope_hints),
@@ -373,7 +402,8 @@ class _PromptDrivenStructuredLLM:
                 "Do not add speculative fields or relations that are not needed for the requested task.\n"
                 "deprecated_fields and deprecated_relations should normally be empty on the first schema.\n"
                 "pruning_hints may explain future cleanup pressure but must not remove keys.\n"
-                "Use memory_context for prior learned details about the same subject when it helps narrow the schema."
+                "Use memory_context for prior learned details about the same subject when it helps narrow the schema.\n"
+                "Use branch_context when the task is a composite scope with child branch results already available."
             ),
             schema_name="initial_schema",
             schema=_schema_definition_schema(),
@@ -381,9 +411,25 @@ class _PromptDrivenStructuredLLM:
                 {
                     "family": interpretation.family,
                     "resolved_subject": interpretation.resolved_subject,
+                    "subject_topology": interpretation.subject_topology,
+                    "scope_key": interpretation.scope_key,
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "subject_participants": [
+                        {
+                            "subject": participant.subject,
+                            "subject_key": participant.subject_key,
+                            "role": participant.role,
+                            "aliases": list(participant.aliases),
+                            "family_hint": participant.family_hint,
+                            "confidence": participant.confidence,
+                            "spawn": participant.spawn,
+                        }
+                        for participant in interpretation.subject_participants
+                    ],
                     "requested_fields": list(interpretation.requested_fields),
                     "requested_relations": list(interpretation.requested_relations),
                     "intent": interpretation.intent,
+                    "branch_context": interpretation.branch_context,
                     "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
@@ -410,7 +456,8 @@ class _PromptDrivenStructuredLLM:
                 "Use deprecated_fields or deprecated_relations only for keys already in the current schema that appear noisy, redundant, or no longer worth enforcing.\n"
                 "Use pruning_hints to explain cleanup pressure without deleting keys.\n"
                 "If no schema change is needed, return the current schema unchanged.\n"
-                "Use memory_context to reuse prior learned subject details before expanding the schema."
+                "Use memory_context to reuse prior learned subject details before expanding the schema.\n"
+                "Use branch_context when the task is a composite scope with child branch results already available."
             ),
             schema_name="evolved_schema",
             schema=_schema_definition_schema(),
@@ -418,6 +465,21 @@ class _PromptDrivenStructuredLLM:
                 {
                     "family": interpretation.family,
                     "resolved_subject": interpretation.resolved_subject,
+                    "subject_topology": interpretation.subject_topology,
+                    "scope_key": interpretation.scope_key,
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "subject_participants": [
+                        {
+                            "subject": participant.subject,
+                            "subject_key": participant.subject_key,
+                            "role": participant.role,
+                            "aliases": list(participant.aliases),
+                            "family_hint": participant.family_hint,
+                            "confidence": participant.confidence,
+                            "spawn": participant.spawn,
+                        }
+                        for participant in interpretation.subject_participants
+                    ],
                     "current_schema": {
                         "schema_id": schema.schema_id,
                         "version": schema.version,
@@ -432,6 +494,7 @@ class _PromptDrivenStructuredLLM:
                         "dominant_issue": coverage.dominant_issue,
                     },
                     "extraction_payload": extraction.payload,
+                    "branch_context": interpretation.branch_context,
                     "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
@@ -453,7 +516,8 @@ class _PromptDrivenStructuredLLM:
                 "payload must contain only domain keys from the schema.\n"
                 "Do not echo request metadata such as family, attempt, resolved_subject, schema, scope_hints, or intent.\n"
                 "Fill every required field and every relation key with the best available value.\n"
-                "Use memory_context for previously learned facts about the same subject before leaving values empty."
+                "Use memory_context for previously learned facts about the same subject before leaving values empty.\n"
+                "Use branch_context when the task is a composite scope with child branch results already available."
             ),
             schema_name="task_extraction",
             schema=_task_extraction_schema(schema),
@@ -462,6 +526,21 @@ class _PromptDrivenStructuredLLM:
                     "family": family,
                     "attempt": attempt,
                     "resolved_subject": interpretation.resolved_subject,
+                    "subject_topology": interpretation.subject_topology,
+                    "scope_key": interpretation.scope_key,
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "subject_participants": [
+                        {
+                            "subject": participant.subject,
+                            "subject_key": participant.subject_key,
+                            "role": participant.role,
+                            "aliases": list(participant.aliases),
+                            "family_hint": participant.family_hint,
+                            "confidence": participant.confidence,
+                            "spawn": participant.spawn,
+                        }
+                        for participant in interpretation.subject_participants
+                    ],
                     "schema": {
                         "schema_id": schema.schema_id,
                         "version": schema.version,
@@ -471,6 +550,7 @@ class _PromptDrivenStructuredLLM:
                     },
                     "scope_hints": list(interpretation.scope_hints),
                     "intent": interpretation.intent,
+                    "branch_context": interpretation.branch_context,
                     "memory_context": interpretation.memory_context,
                 },
                 ensure_ascii=False,
@@ -601,6 +681,35 @@ def _task_interpretation_schema() -> dict[str, Any]:
             "intent": {"type": "string"},
             "resolved_subject": {"type": "string"},
             "subject_candidates": _string_array_schema(),
+            "subject_aliases": _string_array_schema(),
+            "subject_topology": {"type": "string"},
+            "branch_strategy": {"type": "string"},
+            "scope_key": {"type": "string"},
+            "subject_participants": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "subject": {"type": "string"},
+                        "subject_key": {"type": "string"},
+                        "role": {"type": "string"},
+                        "aliases": _string_array_schema(),
+                        "family_hint": {"type": "string"},
+                        "confidence": {"type": "number"},
+                        "spawn": {"type": "boolean"},
+                    },
+                    "required": [
+                        "subject",
+                        "subject_key",
+                        "role",
+                        "aliases",
+                        "family_hint",
+                        "confidence",
+                        "spawn",
+                    ],
+                },
+            },
             "family": {"type": "string"},
             "family_rationale": {"type": "string"},
             "requested_fields": _string_array_schema(),
@@ -613,6 +722,11 @@ def _task_interpretation_schema() -> dict[str, Any]:
             "intent",
             "resolved_subject",
             "subject_candidates",
+            "subject_aliases",
+            "subject_topology",
+            "branch_strategy",
+            "scope_key",
+            "subject_participants",
             "family",
             "family_rationale",
             "requested_fields",

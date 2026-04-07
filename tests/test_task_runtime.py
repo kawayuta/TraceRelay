@@ -415,3 +415,96 @@ def test_runtime_prefers_strategy_probe_and_persists_schema_pruning_metadata(tmp
         "task_strategy_probe",
         "task_strategy_selection",
     }
+
+
+class _AliasOnlyLLM:
+    def interpret_task(self, spec):  # noqa: ANN001
+        return {
+            "intent": "investigate_subject",
+            "resolved_subject": "ASPI Helium Project",
+            "subject_candidates": ["ASPI Helium Project", "ASPI"],
+            "family": "organization",
+            "family_rationale": "This is still a single organization subject with a short alias.",
+            "requested_fields": ["overview"],
+            "requested_relations": [],
+            "scope_hints": ["overview"],
+            "task_shape": "subject_analysis",
+            "locale": "en",
+        }
+
+    def build_initial_schema(self, interpretation):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": ["overview"],
+            "optional_fields": [],
+            "relations": [],
+            "rationale": "Simple alias-preserving schema.",
+        }
+
+    def evolve_schema(self, interpretation, schema, coverage, extraction):  # noqa: ANN001
+        return {
+            "family": interpretation.family,
+            "required_fields": list(schema.required_fields),
+            "optional_fields": list(schema.optional_fields),
+            "relations": list(schema.relations),
+            "rationale": "No-op evolution.",
+        }
+
+    def extract_task(self, family, interpretation, schema, attempt):  # noqa: ANN001
+        from tracerelay.models import ExtractionResult
+
+        return ExtractionResult(
+            payload={"overview": f"{interpretation.resolved_subject} overview"},
+            status="success",
+            provider_metadata={"provider": "alias-only-test", "attempt": attempt},
+        )
+
+
+def test_relationship_task_materializes_subject_branches_and_graph(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+
+    run = runtime.run_task(
+        TaskSpec(
+            prompt="TSMCとNVIDIAの関係を、供給関係、製品カテゴリ、依存度、主要リスク、代替可能性で整理して"
+        )
+    )
+
+    assert run.interpretation.family == "relationship"
+    assert run.interpretation.subject_topology == "composite"
+    assert run.interpretation.branch_strategy == "spawn_atomic_subjects"
+    assert run.interpretation.scope_key == normalize_subject("TSMC と NVIDIA")
+    assert {participant.subject for participant in run.interpretation.subject_participants} == {"TSMC", "NVIDIA"}
+    assert len(run.branch_runs) == 2
+    assert {branch.resolved_subject for branch in run.branch_runs} == {"TSMC", "NVIDIA"}
+    assert all(branch.family == "organization" for branch in run.branch_runs)
+    assert len(run.interpretation.branch_context.get("children", [])) == 2
+    assert {artifact.artifact_type for artifact in run.artifacts} >= {
+        "task_subject_graph",
+        "task_branch_plan",
+        "task_branch_bundle",
+        "task_relation",
+        "subject_relation",
+    }
+
+    repository = TaskRepository(store)
+    task = repository.get_task(run.task_id)
+    assert task["subject_graph"]["subject_topology"] == "composite"
+    assert len(task["task_relations"]) == 2
+    assert any(relation["relation_type"] == "scope_member" for relation in task["subject_relations"])
+    assert any(relation["relation_type"] == "supply_chain_relation" for relation in task["subject_relations"])
+
+
+def test_alias_candidates_remain_atomic_and_do_not_spawn_subject_branches(tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=_AliasOnlyLLM(), artifact_store=store)
+
+    run = runtime.run_task(TaskSpec(prompt="ASPIの概要を構造化して整理して"))
+
+    assert run.interpretation.subject_topology == "atomic"
+    assert run.interpretation.branch_strategy == "none"
+    assert run.branch_runs == ()
+    assert run.interpretation.subject_aliases == ("ASPI",)
+    assert len(run.interpretation.subject_participants) == 1
+    assert run.interpretation.subject_participants[0].subject == "ASPI Helium Project"
+    assert not any(artifact.artifact_type == "task_relation" for artifact in run.artifacts)

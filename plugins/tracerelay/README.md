@@ -48,9 +48,14 @@ Preferred routing in Claude Code:
 - `continue_prior_work` for follow-up work on the same subject
 - `task_status` when a long-running TraceRelay call returns `pending: true`
 - `inspect_latest_changes` for retry, schema-change, or branching review
+- `subject_graph` when you want the persisted composite-subject topology, branch plan, or branch bundle directly
+- `task_relations` when you want parent/child branch execution links for a task
+- `subject_relations` when you want graph edges for a subject or scope without reopening the whole task
 - `plan_next_step` before generic search or ad hoc action
 - `prepare_search_queries` when external search is needed
 
 TraceRelay may recheck the abstract `family` after the initial interpretation when the requested schema shape points elsewhere.
+Composite prompts such as comparisons, supplier/customer analysis, or relationship mapping can also persist a subject graph and child branch tasks instead of flattening every subject into one key.
 Use `inspect_latest_changes` to see `initial_family`, the final family, any `family_revised` or `family_branch_selected` event, the selected strategy branch, the latest chosen branch, and controller telemetry from the latest decision.
+Use `subject_graph`, `task_relations`, or `subject_relations` when you need the branch graph itself rather than the broader task trace payload.
 If `task_evolve`, `structure_subject`, or `continue_prior_work` returns `pending: true`, poll `task_status` with the returned `task_id` or `job_id` instead of retrying the original request.

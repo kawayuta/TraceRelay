@@ -16,7 +16,25 @@ class TaskSpec:
     requested_scope: tuple[str, ...] = ()
     caller: str = "user"
     user_id: str | None = None
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    branch_depth: int = 0
+    branch_subject: str | None = None
+    branch_role: str | None = None
+    disable_subject_branching: bool = False
+    execution_context: dict[str, Any] = field(default_factory=dict)
     memory_context: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SubjectParticipant:
+    subject: str
+    subject_key: str
+    role: str = "subject"
+    aliases: tuple[str, ...] = ()
+    family_hint: str = ""
+    confidence: float = 1.0
+    spawn: bool = True
 
 
 @dataclass(frozen=True)
@@ -24,6 +42,11 @@ class TaskInterpretation:
     intent: str
     resolved_subject: str
     subject_candidates: tuple[str, ...]
+    subject_aliases: tuple[str, ...]
+    subject_topology: str
+    branch_strategy: str
+    scope_key: str
+    subject_participants: tuple[SubjectParticipant, ...]
     family: str
     family_rationale: str
     requested_fields: tuple[str, ...]
@@ -33,6 +56,7 @@ class TaskInterpretation:
     locale: str
     initial_family: str = ""
     family_review_rationale: str = ""
+    branch_context: dict[str, Any] = field(default_factory=dict)
     memory_context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -213,6 +237,37 @@ class PolicySnapshot:
 
 
 @dataclass(frozen=True)
+class BranchRunSummary:
+    task_id: str
+    parent_task_id: str
+    root_task_id: str
+    relation_type: str
+    ordinal: int
+    resolved_subject: str
+    subject_key: str
+    family: str
+    status: str
+    reason: str
+    scope_key: str = ""
+    schema_id: str = ""
+    schema_version: int = 0
+    prompt: str = ""
+    payload_summary: str = ""
+
+
+@dataclass(frozen=True)
+class TaskRelation:
+    relation_id: str
+    parent_task_id: str
+    child_task_id: str
+    relation_type: str
+    ordinal: int
+    branch_subject: str = ""
+    branch_subject_key: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class TaskRun:
     task_id: str
     spec: TaskSpec
@@ -234,3 +289,4 @@ class TaskRun:
     memory_context: TaskMemoryContext | None = None
     evidence_bundle: EvidenceBundle | None = None
     policy_snapshots: tuple[PolicySnapshot, ...] = ()
+    branch_runs: tuple[BranchRunSummary, ...] = ()

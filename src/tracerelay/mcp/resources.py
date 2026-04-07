@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from ..memory import normalize_subject
 from ..action_planning import (
     build_information_gap_analysis,
     build_next_step_plan,
@@ -14,6 +15,16 @@ def list_resources() -> list[dict[str, object]]:
     return [
         {"uri": "tracerelay://tasks", "name": "tasks", "description": "List task summaries"},
         {"uri": "tracerelay://tasks/{task_id}", "name": "task", "description": "Read task detail"},
+        {
+            "uri": "tracerelay://tasks/{task_id}/subject-graph",
+            "name": "subject_graph",
+            "description": "Read the task subject graph, branch plan, and branch bundle",
+        },
+        {
+            "uri": "tracerelay://tasks/{task_id}/task-relations",
+            "name": "task_relations",
+            "description": "Read persisted parent/child task relations for the task",
+        },
         {
             "uri": "tracerelay://tasks/{task_id}/coverage",
             "name": "coverage",
@@ -61,6 +72,11 @@ def list_resources() -> list[dict[str, object]]:
             "description": "Read subject memory",
         },
         {
+            "uri": "tracerelay://memory/subjects/{subject}/relations",
+            "name": "subject_relations",
+            "description": "Read persisted subject graph relations touching the subject or scope",
+        },
+        {
             "uri": "tracerelay://memory/tasks/{task_id}",
             "name": "task_memory_context",
             "description": "Read task memory context",
@@ -91,6 +107,29 @@ def register_resources(mcp: FastMCP, repository: TaskBrowseRepository) -> None:
     )
     def task(task_id: str) -> dict[str, object]:
         return repository.get_task(task_id)
+
+    @mcp.resource(
+        "tracerelay://tasks/{task_id}/subject-graph",
+        name="subject_graph",
+        description="Read the task subject graph, branch plan, and branch bundle",
+        mime_type="application/json",
+    )
+    def subject_graph(task_id: str) -> dict[str, object]:
+        return _build_task_subject_graph(repository, task_id)
+
+    @mcp.resource(
+        "tracerelay://tasks/{task_id}/task-relations",
+        name="task_relations",
+        description="Read persisted parent/child task relations for the task",
+        mime_type="application/json",
+    )
+    def task_relations(task_id: str) -> dict[str, object]:
+        task = repository.get_task(task_id)
+        return {
+            "task_id": task_id,
+            "resolved_subject": str(dict(task.get("interpretation") or {}).get("resolved_subject", "")),
+            "relations": repository.list_task_relations(task_id),
+        }
 
     @mcp.resource(
         "tracerelay://tasks/{task_id}/coverage",
@@ -189,6 +228,19 @@ def register_resources(mcp: FastMCP, repository: TaskBrowseRepository) -> None:
         return build_subject_memory(repository, subject)
 
     @mcp.resource(
+        "tracerelay://memory/subjects/{subject}/relations",
+        name="subject_relations",
+        description="Read persisted subject graph relations touching the subject or scope",
+        mime_type="application/json",
+    )
+    def subject_relations(subject: str) -> dict[str, object]:
+        return {
+            "subject": subject,
+            "subject_key": normalize_subject(subject),
+            "relations": repository.list_subject_relations(subject),
+        }
+
+    @mcp.resource(
         "tracerelay://memory/tasks/{task_id}",
         name="task_memory_context",
         description="Read task memory context",
@@ -209,3 +261,26 @@ def register_resources(mcp: FastMCP, repository: TaskBrowseRepository) -> None:
         from ..web.app import build_memory_search
 
         return build_memory_search(repository, query)
+
+
+def _build_task_subject_graph(repository: TaskBrowseRepository, task_id: str) -> dict[str, object]:
+    task = repository.get_task(task_id)
+    interpretation = dict(task.get("interpretation") or {})
+    subject_graph = dict(task.get("subject_graph") or {})
+    scope_key = str(
+        subject_graph.get("scope_key")
+        or interpretation.get("scope_key")
+        or interpretation.get("resolved_subject")
+        or ""
+    )
+    return {
+        "task_id": task_id,
+        "resolved_subject": str(interpretation.get("resolved_subject", "")),
+        "family": str(interpretation.get("family", "")),
+        "scope_key": scope_key,
+        "subject_graph": subject_graph,
+        "branch_plan": task.get("branch_plan"),
+        "branch_bundle": task.get("branch_bundle"),
+        "task_relations": repository.list_task_relations(task_id),
+        "subject_relations": repository.list_subject_relations(scope_key) if scope_key else [],
+    }

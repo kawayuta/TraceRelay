@@ -14,6 +14,7 @@ from .llm import StructuredLLM, llm_from_env
 from .memory import ArtifactMemoryStore, normalize_subject, resolve_user_id
 from .models import (
     ArtifactRecord,
+    BranchRunSummary,
     CoverageReport,
     ExtractionResult,
     PolicySnapshot,
@@ -25,6 +26,12 @@ from .models import (
 from .prompt_interpretation import PromptInterpreter
 from .schema_patch_planner import plan_schema_patch
 from .schema_store import ArtifactSchemaStore, _normalize_schema_keys
+from .subject_graph import (
+    enrich_interpretation_subject_graph,
+    participant_subject_keys,
+    subject_graph_is_composite,
+    subject_graph_payload,
+)
 from .task_flow import InMemoryArtifactStore
 
 
@@ -67,6 +74,13 @@ class TaskRuntime:
                 "locale": spec.locale,
                 "caller": spec.caller,
                 "user_id": resolve_user_id(spec),
+                "parent_task_id": spec.parent_task_id,
+                "root_task_id": spec.root_task_id,
+                "branch_depth": spec.branch_depth,
+                "branch_subject": spec.branch_subject,
+                "branch_role": spec.branch_role,
+                "disable_subject_branching": spec.disable_subject_branching,
+                "execution_context": dict(spec.execution_context),
             },
         )
 
@@ -74,23 +88,51 @@ class TaskRuntime:
         working_spec = replace(spec, memory_context=_memory_context_payload(prompt_memory))
 
         interpretation = self.interpreter.interpret(working_spec)
-        task_memory = self.memory_store.build_context(working_spec, interpretation, exclude_task_id=task_id)
-        interpretation = replace(interpretation, memory_context=_memory_context_payload(task_memory))
-        evidence_bundle = self.controller.build_evidence_bundle(interpretation, task_memory)
+        provisional_memory = self.memory_store.build_context(working_spec, interpretation, exclude_task_id=task_id)
+        interpretation = replace(interpretation, memory_context=_memory_context_payload(provisional_memory))
+        provisional_evidence = self.controller.build_evidence_bundle(interpretation, provisional_memory)
         interpretation, task_memory, evidence_bundle = self._resolve_family_branch(
             task_id,
             working_spec,
             interpretation,
-            task_memory,
-            evidence_bundle,
+            provisional_memory,
+            provisional_evidence,
             events,
         )
+        interpretation = enrich_interpretation_subject_graph(interpretation, working_spec)
+        task_memory = self.memory_store.build_context(working_spec, interpretation, exclude_task_id=task_id)
+        interpretation = replace(interpretation, memory_context=_memory_context_payload(task_memory))
+        evidence_bundle = self.controller.build_evidence_bundle(interpretation, task_memory)
+        interpretation, branch_runs = self._resolve_subject_branches(
+            task_id,
+            working_spec,
+            interpretation,
+            events,
+        )
+        if branch_runs:
+            evidence_bundle = self.controller.build_evidence_bundle(interpretation, task_memory)
         self._record(
             task_id,
             "task_interpretation",
             {
                 "intent": interpretation.intent,
                 "resolved_subject": interpretation.resolved_subject,
+                "scope_key": interpretation.scope_key,
+                "subject_aliases": list(interpretation.subject_aliases),
+                "subject_topology": interpretation.subject_topology,
+                "branch_strategy": interpretation.branch_strategy,
+                "subject_participants": [
+                    {
+                        "subject": participant.subject,
+                        "subject_key": participant.subject_key,
+                        "role": participant.role,
+                        "aliases": list(participant.aliases),
+                        "family_hint": participant.family_hint,
+                        "confidence": participant.confidence,
+                        "spawn": participant.spawn,
+                    }
+                    for participant in interpretation.subject_participants
+                ],
                 "family": interpretation.family,
                 "initial_family": interpretation.initial_family,
                 "family_rationale": interpretation.family_rationale,
@@ -98,9 +140,13 @@ class TaskRuntime:
                 "requested_fields": list(interpretation.requested_fields),
                 "requested_relations": list(interpretation.requested_relations),
                 "scope_hints": list(interpretation.scope_hints),
+                "task_shape": interpretation.task_shape,
+                "locale": interpretation.locale,
+                "branch_context": _branch_context_summary(interpretation.branch_context),
                 "memory_context": interpretation.memory_context,
             },
         )
+        self._record(task_id, "task_subject_graph", subject_graph_payload(interpretation))
         self._record(task_id, "task_evidence_bundle", asdict(evidence_bundle))
         if interpretation.initial_family and interpretation.initial_family != interpretation.family:
             review_event = TaskEvent(
@@ -124,7 +170,7 @@ class TaskRuntime:
             )
         self.memory_store.append_task_context(task_id, task_memory)
 
-        subject_key = normalize_subject(interpretation.resolved_subject)
+        subject_key = interpretation.scope_key or normalize_subject(interpretation.resolved_subject)
         current_schema = self.schema_store.latest_for_subject(interpretation.family, subject_key)
         schema_history: list[SchemaVersion] = []
         if current_schema is None:
@@ -363,6 +409,14 @@ class TaskRuntime:
                     "extraction": selected_strategy["extraction"],
                 }
 
+        if branch_runs:
+            self._record_subject_relations(
+                task_id,
+                interpretation,
+                extraction_history[-1],
+                branch_runs,
+            )
+
         self._record(
             task_id,
             "task_run",
@@ -399,7 +453,277 @@ class TaskRuntime:
             memory_context=task_memory,
             evidence_bundle=evidence_bundle,
             policy_snapshots=tuple(policy_snapshots),
+            branch_runs=branch_runs,
         )
+
+    def _resolve_subject_branches(
+        self,
+        task_id: str,
+        spec: TaskSpec,
+        interpretation: Any,
+        events: list[TaskEvent],
+    ) -> tuple[Any, tuple[BranchRunSummary, ...]]:
+        participants = tuple(interpretation.subject_participants)
+        spawnable = tuple(participant for participant in participants if participant.spawn)
+        plan_payload = {
+            "plan_id": next_id("branch_plan"),
+            "scope_key": interpretation.scope_key,
+            "resolved_subject": interpretation.resolved_subject,
+            "subject_topology": interpretation.subject_topology,
+            "branch_strategy": interpretation.branch_strategy,
+            "disable_subject_branching": spec.disable_subject_branching,
+            "participant_subject_keys": list(participant_subject_keys(interpretation)),
+            "participants": [
+                {
+                    "subject": participant.subject,
+                    "subject_key": participant.subject_key,
+                    "role": participant.role,
+                    "aliases": list(participant.aliases),
+                    "family_hint": participant.family_hint,
+                    "confidence": participant.confidence,
+                    "spawn": participant.spawn,
+                }
+                for participant in participants
+            ],
+        }
+        self._record(task_id, "task_branch_plan", plan_payload)
+
+        if (
+            spec.disable_subject_branching
+            or not subject_graph_is_composite(interpretation)
+            or interpretation.branch_strategy == "none"
+            or len(spawnable) < 2
+        ):
+            return interpretation, ()
+
+        branch_runs: list[BranchRunSummary] = []
+        child_entries: list[dict[str, object]] = []
+        root_task_id = spec.root_task_id or task_id
+
+        for ordinal, participant in enumerate(spawnable, start=1):
+            child_spec = self._build_branch_child_spec(
+                parent_spec=spec,
+                parent_task_id=task_id,
+                root_task_id=root_task_id,
+                interpretation=interpretation,
+                participant=participant,
+            )
+            child_run = self.run_task(child_spec)
+            payload_summary = _payload_summary(child_run.extraction.payload)
+            summary = BranchRunSummary(
+                task_id=child_run.task_id,
+                parent_task_id=task_id,
+                root_task_id=root_task_id,
+                relation_type="subject_branch_child",
+                ordinal=ordinal,
+                resolved_subject=child_run.interpretation.resolved_subject,
+                subject_key=child_run.interpretation.scope_key or normalize_subject(child_run.interpretation.resolved_subject),
+                family=child_run.interpretation.family,
+                status=child_run.status,
+                reason=child_run.reason,
+                scope_key=child_run.interpretation.scope_key,
+                schema_id=child_run.schema.schema_id,
+                schema_version=child_run.schema.version,
+                prompt=child_run.spec.prompt,
+                payload_summary=payload_summary,
+            )
+            branch_runs.append(summary)
+            self._record(
+                task_id,
+                "task_relation",
+                {
+                    "relation_id": next_id("relation"),
+                    "parent_task_id": task_id,
+                    "child_task_id": child_run.task_id,
+                    "relation_type": "subject_branch_child",
+                    "ordinal": ordinal,
+                    "branch_subject": participant.subject,
+                    "branch_subject_key": participant.subject_key,
+                    "metadata": {
+                        "parent_scope_key": interpretation.scope_key,
+                        "child_scope_key": child_run.interpretation.scope_key,
+                        "role": participant.role,
+                        "status": child_run.status,
+                        "reason": child_run.reason,
+                        "family": child_run.interpretation.family,
+                    },
+                },
+            )
+            branch_event = TaskEvent(
+                event_id=next_id("event"),
+                kind="subject_branch_materialized",
+                details={
+                    "child_task_id": child_run.task_id,
+                    "branch_subject": participant.subject,
+                    "branch_subject_key": participant.subject_key,
+                    "ordinal": ordinal,
+                    "status": child_run.status,
+                    "reason": child_run.reason,
+                },
+            )
+            events.append(branch_event)
+            self._record(
+                task_id,
+                "task_event",
+                {
+                    "event_id": branch_event.event_id,
+                    "kind": branch_event.kind,
+                    "details": branch_event.details,
+                },
+            )
+            child_entries.append(
+                {
+                    "task_id": child_run.task_id,
+                    "resolved_subject": child_run.interpretation.resolved_subject,
+                    "subject_key": summary.subject_key,
+                    "scope_key": child_run.interpretation.scope_key,
+                    "family": child_run.interpretation.family,
+                    "status": child_run.status,
+                    "reason": child_run.reason,
+                    "schema_id": child_run.schema.schema_id,
+                    "schema_version": child_run.schema.version,
+                    "requested_fields": list(child_run.interpretation.requested_fields),
+                    "requested_relations": list(child_run.interpretation.requested_relations),
+                    "payload": dict(child_run.extraction.payload),
+                    "payload_summary": payload_summary,
+                }
+            )
+
+        bundle_payload = {
+            "bundle_id": next_id("bundle"),
+            "scope_key": interpretation.scope_key,
+            "resolved_subject": interpretation.resolved_subject,
+            "subject_topology": interpretation.subject_topology,
+            "branch_strategy": interpretation.branch_strategy,
+            "participant_subject_keys": list(participant_subject_keys(interpretation)),
+            "children": child_entries,
+        }
+        self._record(task_id, "task_branch_bundle", bundle_payload)
+        join_event = TaskEvent(
+            event_id=next_id("event"),
+            kind="subject_branch_join_ready",
+            details={
+                "child_task_ids": [entry["task_id"] for entry in child_entries],
+                "scope_key": interpretation.scope_key,
+                "branch_count": len(child_entries),
+            },
+        )
+        events.append(join_event)
+        self._record(
+            task_id,
+            "task_event",
+            {
+                "event_id": join_event.event_id,
+                "kind": join_event.kind,
+                "details": join_event.details,
+            },
+        )
+        return replace(interpretation, branch_context=bundle_payload), tuple(branch_runs)
+
+    def _build_branch_child_spec(
+        self,
+        *,
+        parent_spec: TaskSpec,
+        parent_task_id: str,
+        root_task_id: str,
+        interpretation: Any,
+        participant: Any,
+    ) -> TaskSpec:
+        counterpart_subjects = [
+            branch_participant.subject
+            for branch_participant in interpretation.subject_participants
+            if branch_participant.subject_key != participant.subject_key
+        ]
+        child_prompt = (
+            f"{participant.subject}について、この複合分析に必要な観点で構造化して整理して"
+        )
+        preferred_atomic_family = "organization" if interpretation.family in {"relationship", "supply_chain_relation"} else ""
+        execution_context = {
+            **dict(parent_spec.execution_context),
+            "branch_mode": "atomic_subject",
+            "forced_subject": participant.subject,
+            "counterpart_subjects": counterpart_subjects,
+            "parent_prompt": parent_spec.prompt,
+            "parent_family": interpretation.family,
+            "parent_scope_key": interpretation.scope_key,
+            "preferred_atomic_family": preferred_atomic_family,
+            "requested_fields": list(interpretation.requested_fields),
+            "requested_relations": list(interpretation.requested_relations),
+        }
+        return TaskSpec(
+            prompt=child_prompt,
+            locale=parent_spec.locale,
+            requested_scope=parent_spec.requested_scope,
+            caller=parent_spec.caller,
+            user_id=parent_spec.user_id,
+            parent_task_id=parent_task_id,
+            root_task_id=root_task_id,
+            branch_depth=parent_spec.branch_depth + 1,
+            branch_subject=participant.subject,
+            branch_role=participant.role,
+            disable_subject_branching=True,
+            execution_context=execution_context,
+        )
+
+    def _record_subject_relations(
+        self,
+        task_id: str,
+        interpretation: Any,
+        extraction: ExtractionResult,
+        branch_runs: tuple[BranchRunSummary, ...],
+    ) -> None:
+        if not subject_graph_is_composite(interpretation):
+            return
+        participants = list(interpretation.subject_participants)
+        participant_keys = [participant.subject_key for participant in participants if participant.subject_key]
+        relation_type = str(extraction.payload.get("relation_type") or interpretation.family or "related_to")
+
+        for participant in participants:
+            self._record(
+                task_id,
+                "subject_relation",
+                {
+                    "relation_id": next_id("relation"),
+                    "source_subject_key": interpretation.scope_key,
+                    "target_subject_key": participant.subject_key,
+                    "relation_type": "scope_member",
+                    "scope_key": interpretation.scope_key,
+                    "payload": {
+                        "resolved_subject": interpretation.resolved_subject,
+                        "participant_subject": participant.subject,
+                        "participant_subject_key": participant.subject_key,
+                        "role": participant.role,
+                        "family": interpretation.family,
+                    },
+                },
+            )
+
+        if len(participant_keys) < 2:
+            return
+        child_by_subject = {branch.subject_key: branch for branch in branch_runs}
+        for index, source_key in enumerate(participant_keys):
+            for target_key in participant_keys[index + 1 :]:
+                source_branch = child_by_subject.get(source_key)
+                target_branch = child_by_subject.get(target_key)
+                self._record(
+                    task_id,
+                    "subject_relation",
+                    {
+                        "relation_id": next_id("relation"),
+                        "source_subject_key": source_key,
+                        "target_subject_key": target_key,
+                        "relation_type": relation_type,
+                        "scope_key": interpretation.scope_key,
+                        "payload": {
+                            "resolved_subject": interpretation.resolved_subject,
+                            "family": interpretation.family,
+                            "relation_type": relation_type,
+                            "summary": _payload_summary(extraction.payload),
+                            "source_task_id": "" if source_branch is None else source_branch.task_id,
+                            "target_task_id": "" if target_branch is None else target_branch.task_id,
+                        },
+                    },
+                )
 
     def _resolve_family_branch(
         self,
@@ -728,6 +1052,39 @@ def _memory_context_payload(context: object) -> dict[str, object]:
     if hasattr(context, "__dataclass_fields__"):
         return asdict(context)
     return {}
+
+
+def _branch_context_summary(context: dict[str, object]) -> dict[str, object]:
+    if not context:
+        return {}
+    children = [dict(item) for item in context.get("children", [])]
+    return {
+        "bundle_id": context.get("bundle_id"),
+        "scope_key": context.get("scope_key"),
+        "resolved_subject": context.get("resolved_subject"),
+        "subject_topology": context.get("subject_topology"),
+        "branch_strategy": context.get("branch_strategy"),
+        "participant_subject_keys": list(context.get("participant_subject_keys", [])),
+        "child_count": len(children),
+        "child_task_ids": [str(item.get("task_id", "")) for item in children],
+    }
+
+
+def _payload_summary(payload: dict[str, object]) -> str:
+    fragments: list[str] = []
+    for key, value in payload.items():
+        if key in {"family", "schema", "prompt", "locale", "status", "reason"}:
+            continue
+        if isinstance(value, list):
+            rendered = ", ".join(str(item) for item in value[:2])
+        elif isinstance(value, dict):
+            rendered = ", ".join(f"{item_key}={item_value}" for item_key, item_value in list(value.items())[:2])
+        else:
+            rendered = str(value)
+        fragments.append(f"{key}: {rendered}")
+    if not fragments:
+        return "empty extraction"
+    return "; ".join(fragments[:4])
 
 
 def _restrict_schema_evolution_payload(

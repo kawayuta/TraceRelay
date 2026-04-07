@@ -6,6 +6,11 @@ from typing import Any
 _ARTIFACT_LANES = {
     "task_prompt": "input",
     "task_interpretation": "decision",
+    "task_subject_graph": "decision",
+    "task_branch_plan": "decision",
+    "task_branch_bundle": "decision",
+    "task_relation": "decision",
+    "subject_relation": "decision",
     "task_evidence_bundle": "decision",
     "task_family_probe": "decision",
     "task_family_selection": "decision",
@@ -43,6 +48,9 @@ def build_task_trace(task: dict[str, object], artifacts: list[dict[str, object]]
         "summary": {
             "prompt": task.get("prompt"),
             "resolved_subject": interpretation.get("resolved_subject"),
+            "scope_key": interpretation.get("scope_key") or dict(task.get("subject_graph") or {}).get("scope_key"),
+            "subject_topology": interpretation.get("subject_topology") or dict(task.get("subject_graph") or {}).get("subject_topology"),
+            "branch_strategy": interpretation.get("branch_strategy") or dict(task.get("subject_graph") or {}).get("branch_strategy"),
             "family": interpretation.get("family"),
             "status": run.get("status"),
             "reason": run.get("reason"),
@@ -97,6 +105,59 @@ def _artifact_summary(
         ]
         subtitle = f"{payload.get('family', '')} for {payload.get('resolved_subject', '')}"
         return "Interpretation", subtitle, _detail_lines(details), "decision"
+    if artifact_type == "task_subject_graph":
+        participants = [dict(item) for item in payload.get("participants", [])]
+        details = [
+            f"scope key: {payload.get('scope_key', '')}",
+            f"topology: {payload.get('subject_topology', '')}",
+            f"branch strategy: {payload.get('branch_strategy', '')}",
+            f"participants: {len(participants)}",
+        ]
+        for participant in participants[:4]:
+            details.append(
+                f"{participant.get('role', 'participant')}: {participant.get('subject', '')} "
+                f"({participant.get('subject_key', '')})"
+            )
+        return "Subject Graph", str(payload.get("subject_topology", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_branch_plan":
+        details = [
+            f"scope key: {payload.get('scope_key', '')}",
+            f"topology: {payload.get('subject_topology', '')}",
+            f"branch strategy: {payload.get('branch_strategy', '')}",
+            f"disable branching: {payload.get('disable_subject_branching', False)}",
+            f"participants: {len(payload.get('participants', []))}",
+        ]
+        return "Branch Plan", str(payload.get("branch_strategy", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_branch_bundle":
+        details = [
+            f"scope key: {payload.get('scope_key', '')}",
+            f"topology: {payload.get('subject_topology', '')}",
+            f"children: {len(payload.get('children', []))}",
+        ]
+        for child in payload.get("children", [])[:4]:
+            entry = dict(child)
+            details.append(
+                f"{entry.get('resolved_subject', '')}: {entry.get('status', '')} / {entry.get('family', '')}"
+            )
+        return "Branch Bundle", str(payload.get("resolved_subject", "")), _detail_lines(details), "decision"
+    if artifact_type == "task_relation":
+        details = [
+            f"parent task: {payload.get('parent_task_id', '')}",
+            f"child task: {payload.get('child_task_id', '')}",
+            f"branch subject: {payload.get('branch_subject', '')}",
+            f"ordinal: {payload.get('ordinal', '')}",
+        ]
+        return "Task Relation", str(payload.get("relation_type", "")), _detail_lines(details), "decision"
+    if artifact_type == "subject_relation":
+        details = [
+            f"source: {payload.get('source_subject_key', '')}",
+            f"target: {payload.get('target_subject_key', '')}",
+            f"scope key: {payload.get('scope_key', '')}",
+        ]
+        summary = str(dict(payload.get("payload", {})).get("summary", ""))
+        if summary:
+            details.append(f"summary: {summary}")
+        return "Subject Relation", str(payload.get("relation_type", "")), _detail_lines(details), "decision"
     if artifact_type == "task_evidence_bundle":
         items = [dict(item) for item in payload.get("items", [])]
         details = [
@@ -341,6 +402,9 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
     interpretation = dict(task.get("interpretation") or {})
     run = dict(task.get("run") or {})
     evidence_bundle = dict(task.get("evidence_bundle") or {})
+    subject_graph = dict(task.get("subject_graph") or {})
+    branch_plan = dict(task.get("branch_plan") or {})
+    branch_bundle = dict(task.get("branch_bundle") or {})
     family_selection = dict(task.get("family_selection") or {})
     strategy_selection = dict(task.get("strategy_selection") or {})
     latest_branch_decision = dict(task.get("latest_branch_decision") or {})
@@ -369,6 +433,19 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
                     ]
                 ),
                 "children": [],
+            },
+            {
+                "title": "Subject Branching",
+                "lines": _detail_lines(
+                    [
+                        f"scope key: {subject_graph.get('scope_key', interpretation.get('scope_key', ''))}",
+                        f"topology: {subject_graph.get('subject_topology', interpretation.get('subject_topology', 'atomic'))}",
+                        f"branch strategy: {subject_graph.get('branch_strategy', interpretation.get('branch_strategy', 'none'))}",
+                        f"participants: {len(subject_graph.get('participants', []))}",
+                        f"child branches: {len(branch_bundle.get('children', []))}",
+                    ]
+                ),
+                "children": _subject_branch_tree_nodes(subject_graph, branch_plan, branch_bundle, task),
             },
             {
                 "title": "Schema Lineage",
@@ -431,6 +508,104 @@ def _build_decision_tree(task: dict[str, object], artifacts: list[dict[str, obje
         ],
     }
     return root
+
+
+def _subject_branch_tree_nodes(
+    subject_graph: dict[str, object],
+    branch_plan: dict[str, object],
+    branch_bundle: dict[str, object],
+    task: dict[str, object],
+) -> list[dict[str, object]]:
+    nodes: list[dict[str, object]] = []
+    participants = [dict(item) for item in subject_graph.get("participants", [])]
+    if participants:
+        nodes.append(
+            {
+                "title": "Participants",
+                "lines": _detail_lines(
+                    [
+                        f"scope key: {subject_graph.get('scope_key', '')}",
+                        f"topology: {subject_graph.get('subject_topology', '')}",
+                    ]
+                ),
+                "children": [
+                    {
+                        "title": participant.get("subject", "") or participant.get("subject_key", ""),
+                        "lines": _detail_lines(
+                            [
+                                f"subject key: {participant.get('subject_key', '')}",
+                                f"role: {participant.get('role', '')}",
+                                f"spawn: {participant.get('spawn', False)}",
+                                f"family hint: {participant.get('family_hint', '') or 'n/a'}",
+                            ]
+                        ),
+                        "children": [],
+                    }
+                    for participant in participants
+                ],
+            }
+        )
+    if branch_plan:
+        nodes.append(
+            {
+                "title": "Branch Plan",
+                "lines": _detail_lines(
+                    [
+                        f"branch strategy: {branch_plan.get('branch_strategy', '')}",
+                        f"disable branching: {branch_plan.get('disable_subject_branching', False)}",
+                        f"participant subject keys: {_preview_list(_to_str_list(branch_plan.get('participant_subject_keys', [])))}",
+                    ]
+                ),
+                "children": [],
+            }
+        )
+    children = [dict(item) for item in branch_bundle.get("children", [])]
+    if children:
+        nodes.append(
+            {
+                "title": "Spawned Child Tasks",
+                "lines": _detail_lines([f"child count: {len(children)}"]),
+                "children": [
+                    {
+                        "title": child.get("resolved_subject", "") or child.get("task_id", ""),
+                        "lines": _detail_lines(
+                            [
+                                f"task id: {child.get('task_id', '')}",
+                                f"scope key: {child.get('scope_key', '')}",
+                                f"family: {child.get('family', '')}",
+                                f"status: {child.get('status', '')} / {child.get('reason', '')}",
+                                f"payload summary: {child.get('payload_summary', '')}",
+                            ]
+                        ),
+                        "children": [],
+                    }
+                    for child in children
+                ],
+            }
+        )
+    subject_relations = [dict(item) for item in task.get("subject_relations", [])]
+    if subject_relations:
+        nodes.append(
+            {
+                "title": "Persisted Subject Relations",
+                "lines": _detail_lines([f"relation count: {len(subject_relations)}"]),
+                "children": [
+                    {
+                        "title": relation.get("relation_type", "") or "relation",
+                        "lines": _detail_lines(
+                            [
+                                f"source: {relation.get('source_subject_key', '')}",
+                                f"target: {relation.get('target_subject_key', '')}",
+                                f"scope key: {relation.get('scope_key', '')}",
+                            ]
+                        ),
+                        "children": [],
+                    }
+                    for relation in subject_relations[:6]
+                ],
+            }
+        )
+    return nodes
 
 
 def _schema_tree_nodes(schema_versions: list[dict[str, object]]) -> list[dict[str, object]]:

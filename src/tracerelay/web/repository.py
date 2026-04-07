@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover
 
 from ..config import postgres_dsn_from_env
 from ..embeddings import cosine_similarity, embed_text, embedding_record, embedder_from_env
+from ..memory import normalize_subject
 from ..task_flow import JsonlArtifactStore
 from .trace import build_task_trace
 
@@ -72,6 +73,12 @@ class TaskBrowseRepository(Protocol):
         ...
 
     def get_subject_memory(self, subject_key: str, family: str | None = None) -> dict[str, object]:
+        ...
+
+    def list_task_relations(self, task_id: str) -> list[dict[str, object]]:
+        ...
+
+    def list_subject_relations(self, subject_key: str) -> list[dict[str, object]]:
         ...
 
 
@@ -211,12 +218,13 @@ class TaskRepository:
         subject_key: str | None = None,
         memory_type: str | None = None,
     ) -> list[dict[str, object]]:
-        normalized_subject = _normalize_subject_key(subject_key) if subject_key is not None else None
         records = self.list_memory_documents(
             profile_key=profile_key,
-            subject_key=normalized_subject,
             memory_type=memory_type,
         )
+        normalized_subject = _normalize_subject_key(subject_key) if subject_key is not None else None
+        if normalized_subject is not None:
+            records = [record for record in records if _memory_record_matches_subject(record, normalized_subject)]
         return _rank_memory_records(query, records, limit=limit, memory_type=memory_type)
 
     def get_task_memory_context(self, task_id: str) -> dict[str, object]:
@@ -271,6 +279,34 @@ class TaskRepository:
             "task_memory_contexts": matching_contexts,
             "profiles": profiles,
         }
+
+    def list_task_relations(self, task_id: str) -> list[dict[str, object]]:
+        relations: list[dict[str, object]] = []
+        for artifact in self.store.all_artifacts():
+            if artifact.artifact_type != "task_relation":
+                continue
+            payload = dict(artifact.payload)
+            if task_id not in {str(payload.get("parent_task_id", "")), str(payload.get("child_task_id", ""))}:
+                continue
+            relations.append(payload)
+        relations.sort(key=lambda item: (int(item.get("ordinal", 0)), str(item.get("child_task_id", ""))))
+        return relations
+
+    def list_subject_relations(self, subject_key: str) -> list[dict[str, object]]:
+        normalized_subject = _normalize_subject_key(subject_key)
+        relations: list[dict[str, object]] = []
+        for artifact in self.store.all_artifacts():
+            if artifact.artifact_type != "subject_relation":
+                continue
+            payload = dict(artifact.payload)
+            if normalized_subject not in {
+                _normalize_subject_key(str(payload.get("source_subject_key", ""))),
+                _normalize_subject_key(str(payload.get("target_subject_key", ""))),
+                _normalize_subject_key(str(payload.get("scope_key", ""))),
+            }:
+                continue
+            relations.append(payload)
+        return relations
 
     def _task_artifacts(self, task_id: str) -> list[dict[str, object]]:
         return [
@@ -514,7 +550,8 @@ class PostgresTaskRepository:
 
     def get_subject_memory(self, subject_key: str, family: str | None = None) -> dict[str, object]:
         normalized_subject = _normalize_subject_key(subject_key)
-        records = self.list_memory_documents(subject_key=normalized_subject)
+        records = self.list_memory_documents()
+        records = [record for record in records if _memory_record_matches_subject(record, normalized_subject)]
         documents = [record for record in records if record.get("record_type") == "memory_document"]
         contexts = [record for record in records if record.get("record_type") == "task_memory_context"]
         if family is not None:
@@ -529,6 +566,50 @@ class PostgresTaskRepository:
             "task_memory_contexts": contexts,
             "profiles": profiles,
         }
+
+    def list_task_relations(self, task_id: str) -> list[dict[str, object]]:
+        sql = """
+            SELECT relation_id, parent_task_id, child_task_id, relation_type, ordinal, branch_subject, branch_subject_key, payload
+            FROM task_relation
+            WHERE parent_task_id = %s OR child_task_id = %s
+            ORDER BY ordinal ASC, child_task_id ASC
+        """
+        rows = self._fetchall(sql, (task_id, task_id))
+        return [
+            {
+                "relation_id": row[0],
+                "parent_task_id": row[1],
+                "child_task_id": row[2],
+                "relation_type": row[3],
+                "ordinal": row[4],
+                "branch_subject": row[5],
+                "branch_subject_key": row[6],
+                "metadata": dict(row[7]).get("metadata", {}) if isinstance(row[7], dict) else {},
+                **(dict(row[7]) if isinstance(row[7], dict) else {}),
+            }
+            for row in rows
+        ]
+
+    def list_subject_relations(self, subject_key: str) -> list[dict[str, object]]:
+        normalized_subject = _normalize_subject_key(subject_key)
+        sql = """
+            SELECT relation_id, source_subject_key, target_subject_key, relation_type, scope_key, payload
+            FROM subject_relation
+            WHERE source_subject_key = %s OR target_subject_key = %s OR scope_key = %s
+            ORDER BY relation_id ASC
+        """
+        rows = self._fetchall(sql, (normalized_subject, normalized_subject, normalized_subject))
+        return [
+            {
+                "relation_id": row[0],
+                "source_subject_key": row[1],
+                "target_subject_key": row[2],
+                "relation_type": row[3],
+                "scope_key": row[4],
+                **(dict(row[5]) if isinstance(row[5], dict) else {}),
+            }
+            for row in rows
+        ]
 
     def _connect(self) -> Any:
         if self.connection_factory is not None:
@@ -586,6 +667,8 @@ def _assemble_task(task_id: str, artifacts: list[dict[str, object]]) -> dict[str
     strategy_probes: list[dict[str, object]] = []
     events: list[dict[str, object]] = []
     schema_versions: list[dict[str, object]] = []
+    task_relations: list[dict[str, object]] = []
+    subject_relations: list[dict[str, object]] = []
     for artifact in artifacts:
         artifact_type = str(artifact["artifact_type"])
         payload = dict(artifact["payload"])
@@ -604,19 +687,28 @@ def _assemble_task(task_id: str, artifacts: list[dict[str, object]]) -> dict[str
             events.append(payload)
         elif artifact_type in {"schema_version", "schema_reference"}:
             schema_versions.append(payload)
+        elif artifact_type == "task_relation":
+            task_relations.append(payload)
+        elif artifact_type == "subject_relation":
+            subject_relations.append(payload)
     return {
         "task_id": task_id,
         "prompt": latest_by_type.get("task_prompt", {}).get("prompt"),
         "interpretation": latest_by_type.get("task_interpretation", {}),
+        "subject_graph": latest_by_type.get("task_subject_graph", {}),
         "extractions": extractions,
         "coverage_reports": coverages,
         "evidence_bundle": latest_by_type.get("task_evidence_bundle"),
+        "branch_plan": latest_by_type.get("task_branch_plan"),
+        "branch_bundle": latest_by_type.get("task_branch_bundle"),
         "family_probes": family_probes,
         "family_selection": latest_by_type.get("task_family_selection"),
         "strategy_probes": strategy_probes,
         "strategy_selection": latest_by_type.get("task_strategy_selection"),
         "branch_decisions": branch_decisions,
         "latest_branch_decision": branch_decisions[-1] if branch_decisions else None,
+        "task_relations": task_relations,
+        "subject_relations": subject_relations,
         "run": latest_by_type.get("task_run", {}),
         "schema_versions": schema_versions,
         "schema_gap": latest_by_type.get("schema_gap"),
@@ -636,10 +728,20 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
     extractions = list(task.get("extractions", []))
     coverage_reports = list(task.get("coverage_reports", []))
     profile_key = _profile_key_for_task(prompt_payload, interpretation)
+    subject_graph = dict(task.get("subject_graph", {}))
     subject_key = _subject_key_for_task(task)
     subject_aliases = _subject_aliases_for_task(task)
     family = str(interpretation.get("family") or run.get("family") or "")
     resolved_subject = str(interpretation.get("resolved_subject", ""))
+    subject_topology = str(subject_graph.get("subject_topology") or interpretation.get("subject_topology") or "atomic")
+    branch_strategy = str(subject_graph.get("branch_strategy") or interpretation.get("branch_strategy") or "none")
+    participants = [dict(item) for item in subject_graph.get("participants", [])]
+    participant_subjects = [str(item.get("subject", "")) for item in participants if str(item.get("subject", "")).strip()]
+    participant_subject_keys = [
+        str(item.get("subject_key", ""))
+        for item in participants
+        if str(item.get("subject_key", "")).strip()
+    ]
     latest_extraction = dict(extractions[-1]) if extractions else {}
     latest_coverage = dict(coverage_reports[-1]) if coverage_reports else {}
     schema_versions = list(task.get("schema_versions", []))
@@ -677,6 +779,10 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
                 "profile_key": profile_key,
                 "subject_key": subject_key,
                 "subject_aliases": subject_aliases,
+                "subject_topology": subject_topology,
+                "branch_strategy": branch_strategy,
+                "participant_subjects": participant_subjects,
+                "participant_subject_keys": participant_subject_keys,
                 "family": family,
                 "resolved_subject": resolved_subject,
                 "prompt": task.get("prompt"),
@@ -702,6 +808,10 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
                 "profile_key": profile_key,
                 "subject_key": subject_key,
                 "subject_aliases": subject_aliases,
+                "subject_topology": subject_topology,
+                "branch_strategy": branch_strategy,
+                "participant_subjects": participant_subjects,
+                "participant_subject_keys": participant_subject_keys,
                 "family": family,
                 "resolved_subject": resolved_subject,
                 "facts": _fact_lines_from_extraction(latest_extraction),
@@ -724,6 +834,10 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
                 "profile_key": profile_key,
                 "subject_key": subject_key,
                 "subject_aliases": subject_aliases,
+                "subject_topology": subject_topology,
+                "branch_strategy": branch_strategy,
+                "participant_subjects": participant_subjects,
+                "participant_subject_keys": participant_subject_keys,
                 "family": family,
                 "resolved_subject": resolved_subject,
                 "prompt": task.get("prompt"),
@@ -738,6 +852,9 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
                 "extractions": extractions,
                 "schema_versions": schema_versions,
                 "events": list(task.get("events", [])),
+                "task_relations": list(task.get("task_relations", [])),
+                "subject_relations": list(task.get("subject_relations", [])),
+                "branch_bundle": dict(task.get("branch_bundle") or {}),
             },
         ),
     ]
@@ -759,6 +876,10 @@ def build_task_memory_records(task_id: str, artifacts: list[dict[str, object]]) 
                     "profile_key": profile_key,
                     "subject_key": subject_key,
                     "subject_aliases": subject_aliases,
+                    "subject_topology": subject_topology,
+                    "branch_strategy": branch_strategy,
+                    "participant_subjects": participant_subjects,
+                    "participant_subject_keys": participant_subject_keys,
                     "family": family,
                     "attempt": attempt,
                     "status": extraction.get("status"),
@@ -886,18 +1007,36 @@ def _profile_key_for_task(prompt_payload: dict[str, object], interpretation: dic
 
 
 def _subject_key_for_task(task: dict[str, object]) -> str:
+    subject_graph = dict(task.get("subject_graph", {}))
+    scope_key = str(subject_graph.get("scope_key") or "").strip()
+    if scope_key:
+        return _normalize_subject_key(scope_key)
     interpretation = dict(task.get("interpretation", {}))
     resolved_subject = str(interpretation.get("resolved_subject") or task.get("prompt") or task.get("task_id") or "unknown")
     return _normalize_subject_key(resolved_subject)
 
 
 def _subject_aliases_for_task(task: dict[str, object]) -> list[str]:
+    subject_graph = dict(task.get("subject_graph", {}))
     interpretation = dict(task.get("interpretation", {}))
     resolved_subject = str(interpretation.get("resolved_subject") or task.get("prompt") or "")
     aliases: set[str] = set()
     normalized = _normalize_subject_key(resolved_subject)
     if normalized:
         aliases.add(normalized)
+    for alias in subject_graph.get("subject_aliases", []):
+        normalized_alias = _normalize_subject_key(str(alias))
+        if normalized_alias:
+            aliases.add(normalized_alias)
+    for participant in subject_graph.get("participants", []):
+        participant_data = dict(participant)
+        normalized_subject = _normalize_subject_key(str(participant_data.get("subject_key") or participant_data.get("subject", "")))
+        if normalized_subject:
+            aliases.add(normalized_subject)
+        for alias in participant_data.get("aliases", []):
+            normalized_alias = _normalize_subject_key(str(alias))
+            if normalized_alias:
+                aliases.add(normalized_alias)
     aliases.update(_split_subject_aliases(resolved_subject))
     return sorted(alias for alias in aliases if alias)
 
@@ -918,14 +1057,7 @@ def _split_subject_aliases(text: str) -> set[str]:
 
 
 def _normalize_subject_key(text: str) -> str:
-    normalized = re.sub(r"[^\w]+", "_", text.casefold(), flags=re.UNICODE)
-    normalized = re.sub(r"_+", "_", normalized).strip("_")
-    if not normalized:
-        return "unknown"
-    if len(normalized) > 120:
-        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-        normalized = f"{normalized[:96].rstrip('_')}_{digest}"
-    return normalized
+    return normalize_subject(text)
 
 
 def _subject_summary_text(
@@ -1081,6 +1213,7 @@ def _memory_record_matches_subject(record: dict[str, object], subject_key: str) 
     payload = dict(record.get("payload", {}))
     aliases = {record_subject}
     aliases.update(_normalize_subject_key(str(alias)) for alias in payload.get("subject_aliases", []) if alias)
+    aliases.update(_normalize_subject_key(str(alias)) for alias in payload.get("participant_subject_keys", []) if alias)
     return normalized in {alias for alias in aliases if alias and alias != "unknown"}
 
 
@@ -1184,6 +1317,7 @@ def _record_subject_aliases(record: dict[str, object]) -> set[str]:
     payload = dict(record.get("payload", {}))
     aliases = {_normalize_subject_key(str(record.get("subject_key", "")))}
     aliases.update(_normalize_subject_key(str(alias)) for alias in payload.get("subject_aliases", []) if alias)
+    aliases.update(_normalize_subject_key(str(alias)) for alias in payload.get("participant_subject_keys", []) if alias)
     resolved_subject = str(payload.get("resolved_subject", ""))
     if resolved_subject:
         aliases.update(_split_subject_aliases(resolved_subject))
@@ -1220,6 +1354,12 @@ def _embedding_text(memory_type: str, summary: str, payload: dict[str, object]) 
         lines.append(f"subject: {resolved_subject}")
     if family:
         lines.append(f"family: {family}")
+    participant_subjects = [str(item) for item in payload.get("participant_subjects", []) if item]
+    if participant_subjects:
+        lines.append(f"participants: {', '.join(participant_subjects[:6])}")
+    topology = str(payload.get("subject_topology", "")).strip()
+    if topology:
+        lines.append(f"subject_topology: {topology}")
 
     if memory_type == "task_summary":
         prompt = _truncate_text(str(payload.get("prompt", "")).strip(), 320)
@@ -1254,6 +1394,9 @@ def _embedding_text(memory_type: str, summary: str, payload: dict[str, object]) 
             value = str(payload.get(key, "")).strip()
             if value:
                 lines.append(f"{key}: {value}")
+        branch_strategy = str(payload.get("branch_strategy", "")).strip()
+        if branch_strategy:
+            lines.append(f"branch_strategy: {branch_strategy}")
         event_kinds = [str(item.get("kind", "")) for item in payload.get("events", []) if item]
         if event_kinds:
             lines.append(f"events: {', '.join(event_kinds[:5])}")

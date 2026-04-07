@@ -628,6 +628,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "prepare_search_queries",
         "plan_next_step",
         "task_trace",
+        "subject_graph",
+        "task_relations",
+        "subject_relations",
         "schema_status",
         "schema_apply",
         "artifact_read",
@@ -643,6 +646,9 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         "prepare_search_queries",
         "plan_next_step",
         "task_trace",
+        "subject_graph",
+        "task_relations",
+        "subject_relations",
         "schema_status",
         "schema_apply",
         "artifact_read",
@@ -655,6 +661,12 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     assert "tracerelay://tasks/{task_id}/trace" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://tasks/{task_id}/subject-graph" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://tasks/{task_id}/task-relations" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     assert "tracerelay://tasks/{task_id}/gaps" in {
@@ -695,6 +707,13 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert latest_changes["next_step"]["recommended_queries"]
     task_trace_result = server.call_tool("task_trace", {"task_id": google.task_id})
     assert task_trace_result["summary"]["family"] == "organization"
+    subject_graph_result = server.call_tool("subject_graph", {"task_id": google.task_id})
+    assert subject_graph_result["found"] is True
+    assert subject_graph_result["task_id"] == google.task_id
+    task_relations_result = server.call_tool("task_relations", {"task_id": google.task_id})
+    assert task_relations_result["relations"] == []
+    subject_relations_result = server.call_tool("subject_relations", {"subject": "Google"})
+    assert subject_relations_result["subject_key"] == "google"
     gap_result = server.call_tool("analyze_information_gaps", {"task_id": google.task_id})
     assert gap_result["found"] is True
     assert gap_result["subject"] == "Google"
@@ -708,6 +727,10 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     assert any(event["kind"] == "schema_apply_confirmed" for event in events)
     trace_resource = server.read_resource(f"tracerelay://tasks/{google.task_id}/trace")
     assert trace_resource["summary"]["status"] == "success"
+    subject_graph_resource = server.read_resource(f"tracerelay://tasks/{google.task_id}/subject-graph")
+    assert subject_graph_resource["task_id"] == google.task_id
+    task_relations_resource = server.read_resource(f"tracerelay://tasks/{google.task_id}/task-relations")
+    assert task_relations_resource["task_id"] == google.task_id
     assert server.read_resource(f"tracerelay://tasks/{google.task_id}/gaps")["subject"] == "Google"
     assert server.read_resource(f"tracerelay://tasks/{google.task_id}/queries")["queries"]
     assert server.read_resource(f"tracerelay://tasks/{google.task_id}/next-step")["recommended_actions"]
@@ -729,6 +752,69 @@ def test_jsonl_store_projection_web_and_mcp(fake_llm, tmp_path):
     if isinstance(structured_trace, dict) and "result" in structured_trace:
         structured_trace = structured_trace["result"]
     assert structured_trace["summary"]["reason"] == "complete"
+
+
+def test_composite_subject_graph_surfaces_are_visible(fake_llm, tmp_path):
+    store = JsonlArtifactStore(tmp_path / "workspace")
+    runtime = TaskRuntime(llm=fake_llm, artifact_store=store)
+    run = runtime.run_task(
+        TaskSpec(
+            prompt="TSMCとNVIDIAの関係を、供給関係、製品カテゴリ、依存度、主要リスク、代替可能性で整理して"
+        )
+    )
+
+    projector = TaskRuntimeProjector(store)
+    schema_sql = projector.schema_sql()
+    assert "CREATE TABLE IF NOT EXISTS task_subject_graph" in schema_sql
+    assert "CREATE TABLE IF NOT EXISTS task_relation" in schema_sql
+    assert "CREATE TABLE IF NOT EXISTS subject_relation" in schema_sql
+    rows = projector.rows_for_task(run.task_id)
+    assert {row.table for row in rows} >= {
+        "task_subject_graph",
+        "task_relation",
+        "subject_relation",
+    }
+
+    repository = TaskRepository(store)
+    subject_memory = repository.get_subject_memory("NVIDIA")
+    subject_task_ids = {
+        record["task_id"]
+        for record in subject_memory["memory_documents"] + subject_memory["task_memory_contexts"]
+        if record.get("task_id")
+    }
+    assert run.task_id in subject_task_ids
+    assert repository.list_subject_relations("NVIDIA")
+    assert repository.list_task_relations(run.task_id)
+
+    app = create_app(repository)
+    client = app.test_client()
+    trace_payload = client.get(f"/api/tasks/{run.task_id}/trace").get_json()
+    assert trace_payload["summary"]["subject_topology"] == "composite"
+    assert trace_payload["summary"]["branch_strategy"] == "spawn_atomic_subjects"
+    assert "Subject Branching" in [child["title"] for child in trace_payload["decision_tree"]["children"]]
+
+    subject_page = client.get("/memory/subjects/NVIDIA")
+    assert subject_page.status_code == 200
+    subject_html = subject_page.get_data(as_text=True)
+    assert "Subject Graph" in subject_html
+
+    server = LocalMCPServer(runtime, store, repository=repository, sync_dsn=None)
+    latest = server.call_tool("inspect_latest_changes", {"subject": "TSMC と NVIDIA"})
+    assert latest["found"] is True
+    assert latest["task_id"] == run.task_id
+    subject_graph_result = server.call_tool("subject_graph", {"subject": "TSMC と NVIDIA"})
+    assert subject_graph_result["found"] is True
+    assert subject_graph_result["subject_graph"]["subject_topology"] == "composite"
+    task_relations_result = server.call_tool("task_relations", {"task_id": run.task_id})
+    assert len(task_relations_result["relations"]) == 2
+    subject_relations_result = server.call_tool("subject_relations", {"subject": "NVIDIA"})
+    assert subject_relations_result["relations"]
+    subject_graph_resource = server.read_resource(f"tracerelay://tasks/{run.task_id}/subject-graph")
+    assert subject_graph_resource["task_id"] == run.task_id
+    task_relations_resource = server.read_resource(f"tracerelay://tasks/{run.task_id}/task-relations")
+    assert len(task_relations_resource["relations"]) == 2
+    subject_relations_resource = server.read_resource("tracerelay://memory/subjects/NVIDIA/relations")
+    assert subject_relations_resource["relations"]
 
 
 def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
@@ -794,17 +880,22 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
         "memory_profile",
         "subject_memory",
         "task_memory_context",
+        "subject_relations",
     }
     assert {tool.name for tool in server.list_tools()} >= {
         "memory_search",
         "memory_profile",
         "subject_memory",
         "task_memory_context",
+        "subject_relations",
     }
     assert "tracerelay://memory/profile" in {
         str(resource.uri) for resource in server.list_resources()
     }
     assert "tracerelay://memory/search/{query}" in {
+        str(resource.uriTemplate) for resource in server.list_resource_templates()
+    }
+    assert "tracerelay://memory/subjects/{subject}/relations" in {
         str(resource.uriTemplate) for resource in server.list_resource_templates()
     }
     memory_search_result = server.call_tool("memory_search", {"query": "Google"})
@@ -815,10 +906,13 @@ def test_memory_web_and_mcp_surfaces(fake_llm, tmp_path):
     subject_memory_result = server.call_tool("subject_memory", {"subject": "Google"})
     assert subject_memory_result["subject"] == "Google"
     assert subject_memory_result["learned_facts"]
+    subject_relations_result = server.call_tool("subject_relations", {"subject": "Google"})
+    assert subject_relations_result["subject_key"] == "google"
     task_memory_result = server.call_tool("task_memory_context", {"task_id": google.task_id})
     assert task_memory_result["task_id"] == google.task_id
     assert server.read_resource("tracerelay://memory/profile")["profile_id"] == "workspace"
     assert server.read_resource("tracerelay://memory/subjects/Google")["subject"] == "Google"
+    assert server.read_resource("tracerelay://memory/subjects/Google/relations")["subject_key"] == "google"
     assert server.read_resource(f"tracerelay://memory/tasks/{google.task_id}")["task_id"] == google.task_id
 
 

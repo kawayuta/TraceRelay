@@ -55,10 +55,18 @@ class ArtifactMemoryStore:
         )
         subject_hits: tuple[MemoryHit, ...] = ()
         if interpretation is not None:
+            subject_aliases = {
+                interpretation.resolved_subject,
+                *interpretation.subject_candidates,
+                *interpretation.subject_aliases,
+                *(participant.subject for participant in interpretation.subject_participants),
+                *(alias for participant in interpretation.subject_participants for alias in participant.aliases),
+            }
             subject_hits = self.search(
                 _subject_query(interpretation),
                 user_id=user_id,
-                subject_key=normalize_subject(interpretation.resolved_subject),
+                subject_key=interpretation.scope_key or normalize_subject(interpretation.resolved_subject),
+                subject_aliases=tuple(subject_aliases),
                 family=interpretation.family,
                 exclude_task_id=exclude_task_id,
                 top_k=top_k,
@@ -78,6 +86,7 @@ class ArtifactMemoryStore:
         *,
         user_id: str | None = None,
         subject_key: str | None = None,
+        subject_aliases: tuple[str, ...] | None = None,
         family: str | None = None,
         exclude_task_id: str | None = None,
         kinds: tuple[str, ...] | None = None,
@@ -86,12 +95,23 @@ class ArtifactMemoryStore:
         query_vector = self.embedder.embed(query)
         query_algorithm = getattr(self.embedder, "algorithm", "hash_vector_v1")
         documents = list(self.all_memory_documents())
+        normalized_aliases = {
+            normalize_subject(alias)
+            for alias in (subject_aliases or ())
+            if str(alias).strip()
+        }
         if subject_key:
             exact_subject_documents = [
                 document for document in documents if document.subject_key == subject_key
             ]
-            if exact_subject_documents:
-                documents = exact_subject_documents
+            alias_documents = [
+                document for document in documents if _document_subject_aliases(document).intersection(normalized_aliases)
+            ]
+            if exact_subject_documents or alias_documents:
+                deduped: dict[str, MemoryDocument] = {}
+                for document in exact_subject_documents + alias_documents:
+                    deduped[document.memory_id] = document
+                documents = list(deduped.values())
         results: list[MemoryHit] = []
         for document in documents:
             if exclude_task_id is not None and document.source_task_id == exclude_task_id:
@@ -105,6 +125,8 @@ class ArtifactMemoryStore:
                 score += 0.05
             if subject_key and document.subject_key == subject_key:
                 score += 0.35
+            elif normalized_aliases and _document_subject_aliases(document).intersection(normalized_aliases):
+                score += 0.12
             if family and document.family == family:
                 score += 0.1
             if document.kind == "extraction_summary":
@@ -237,11 +259,18 @@ class ArtifactMemoryStore:
                 kind="prompt_summary",
                 user_id=user_id,
                 subject=interpretation.resolved_subject,
+                subject_key=interpretation.scope_key or normalize_subject(interpretation.resolved_subject),
                 family=interpretation.family,
                 text=_prompt_memory_text(spec, interpretation),
                 metadata={
                     "requested_fields": list(interpretation.requested_fields),
                     "requested_relations": list(interpretation.requested_relations),
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "participant_subject_keys": [participant.subject_key for participant in interpretation.subject_participants],
+                    "subject_topology": interpretation.subject_topology,
+                    "branch_strategy": interpretation.branch_strategy,
+                    "parent_task_id": spec.parent_task_id or "",
+                    "root_task_id": spec.root_task_id or "",
                 },
             ),
             self._memory_document(
@@ -249,11 +278,17 @@ class ArtifactMemoryStore:
                 kind="extraction_summary",
                 user_id=user_id,
                 subject=interpretation.resolved_subject,
+                subject_key=interpretation.scope_key or normalize_subject(interpretation.resolved_subject),
                 family=interpretation.family,
                 text=_extraction_memory_text(interpretation, extraction),
                 metadata={
                     "status": extraction.status,
                     "provider_metadata": dict(extraction.provider_metadata),
+                    "subject_aliases": list(interpretation.subject_aliases),
+                    "participant_subject_keys": [participant.subject_key for participant in interpretation.subject_participants],
+                    "subject_topology": interpretation.subject_topology,
+                    "branch_strategy": interpretation.branch_strategy,
+                    "scope_key": interpretation.scope_key,
                 },
             ),
         )
@@ -285,6 +320,7 @@ class ArtifactMemoryStore:
         kind: str,
         user_id: str,
         subject: str,
+        subject_key: str | None = None,
         family: str,
         text: str,
         metadata: dict[str, Any],
@@ -295,7 +331,7 @@ class ArtifactMemoryStore:
             kind=kind,
             user_id=user_id,
             subject=subject,
-            subject_key=normalize_subject(subject),
+            subject_key=subject_key or normalize_subject(subject),
             family=family,
             text=text,
             algorithm=getattr(self.embedder, "algorithm", "hash_vector_v1"),
@@ -388,6 +424,21 @@ def _summarize_value(value: object) -> str:
     if isinstance(value, list):
         return ", ".join(_summarize_value(item) for item in value[:4])
     return str(value)
+
+
+def _document_subject_aliases(document: MemoryDocument) -> set[str]:
+    aliases = {document.subject_key}
+    aliases.update(
+        normalize_subject(str(alias))
+        for alias in document.metadata.get("subject_aliases", [])
+        if str(alias).strip()
+    )
+    aliases.update(
+        normalize_subject(str(alias))
+        for alias in document.metadata.get("participant_subject_keys", [])
+        if str(alias).strip()
+    )
+    return {alias for alias in aliases if alias and alias != "unknown"}
 
 
 def _task_summaries_for_user(artifacts: tuple[ArtifactRecord, ...], user_id: str) -> list[dict[str, object]]:
